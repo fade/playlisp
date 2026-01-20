@@ -10,9 +10,13 @@
                :rutils
                :str
                :cl-ppcre
+               :taglib
                :cl-flac
                :parsnip)
   :pathname "./"
   :components ((:file "app-utils")
-               (:file "playlisp")))
+               (:file "packages")
+               (:file "parse2-m3u")
+               (:file "playlisp")
+               (:file "tests")))
 

@@ -1,9 +1,4 @@
 ;; -*-lisp-*-
-(defpackage :playlisp
-  (:nicknames #:play)
-  (:use :cl :parsnip)
-  (:use :playlisp.app-utils)
-  (:export :-main))
 
 (in-package :playlisp)
 
