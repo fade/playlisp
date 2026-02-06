@@ -1,5 +1,25 @@
 ;; -*-lisp-*-
 
+(defpackage #:playlisp
+  (:use #:cl
+        #:parsnip)
+  (:export #:playlist
+           #:playlist-name
+           #:playlist-phase
+           #:playlist-duration
+           #:playlist-curator
+           #:playlist-description
+           #:playlist-elements
+           #:make-playlist
+           #:track
+           #:title
+           #:artist
+           #:track-path
+           #:playlist-position
+           #:runtime
+           #:make-track
+           #:decode-m3u))
+
 (in-package :playlisp)
 
 #|
@@ -79,16 +99,6 @@ the playlist.")
 
 
 
-(defun decode-m3u (m3udata)
-  (let ((header nil)
-        (tracks nil))
-    (ignorable header tracks)
-    (loop for line in m3udata
-          do (format t "~&~A" line))))
-
-(defun read-playlist (playlist)
-  (let* ((m3ufile (rutils:slurp playlist)))
-    (values m3ufile)))
 
 (defun -main (&optional args)
   (format t "~a~%" "I don't do much yet"))
