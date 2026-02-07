@@ -22,25 +22,6 @@
 
 (in-package :playlisp)
 
-#|
-The Goal here is to read m3u files and turn them into something we can compute about, then reserialize to m3u files.
-
-An m3u file has only a /de facto/ structure, bu it roughly looks like this:
-
-#EXTM3U
-#PLAYLIST:Evening Descent
-#PHASE:Evening Descent
-#DURATION:6 hours (approx)
-#CURATOR:Asteroid Radio
-#DESCRIPTION:Winding down transitional ambient for the evening hours (18:00-00:00)
-
-#EXTINF:-1,Brian Eno - Dust Shuffle
-/app/music/Brian Eno/2011 - Small Craft On a Milk Sea/B4 Dust Shuffle.flac
-#EXTINF:-1,Biosphere - Black Mesa
-/app/music/Biosphere - The Petrified Forest (2017) - CD FLAC/02. Biosphere - Black Mesa.flac
-#EXTINF:-1,Labradford - C
-|#
-
 (defclass playlist ()
   ((playlist-name :accessor playlist-name :initarg :playlist-name
                   :initform (error "Playlist instances require a name."))
