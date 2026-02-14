@@ -1,26 +1,28 @@
 ;;; playlisp.asd - ASDF system definition for playlisp
 
+(asdf:register-system-packages "playlisp" '(:playlisp))
+
 (asdf:defsystem #:playlisp
-  :description "M3U Playlist Parser using Parsnip"
+  :class :package-inferred-system
+  :description "M3U Playlist Parser using Parsector"
   :author "Brian O'Reilly <fade@deepsky.com>"
   :license "GNU AFFERO GENERAL PUBLIC LICENSE V.3"
   :version "0.1.0"
-  :serial t
-  
-  :depends-on (#:parsnip
+
+  :depends-on (#:parsector
                #:rutils
                #:taglib
                #:alexandria)
-  :components ((:file "playlisp")
-               (:file "parser")))
+  :components ((:file "playlisp")))
 
-(asdf:defsystem #:playlisp/test
+(asdf:defsystem #:playlisp/tests
   :description "Test suite for playlisp"
-  :author "Your Name Here" ; Placeholder, replace if needed
-  :license "BSD-3-Clause" ; Placeholder, replace if needed
+  :author "Brian O'Reilly <fade@deepsky.com>"
+  :license "GNU AFFERO GENERAL PUBLIC LICENSE V.3"
   :version "0.1.0"
   :depends-on (#:playlisp
+               #:playlisp/parser
                #:parachute)
   :components ((:file "tests"))
   :perform (asdf:test-op (op c)
-                         (uiop:symbol-call :parachute :test :playlisp.test)))
+                         (uiop:symbol-call :parachute :test :playlisp/tests)))
