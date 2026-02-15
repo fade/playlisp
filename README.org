@@ -1,0 +1,200 @@
+#+TITLE: playlisp
+#+AUTHOR: Brian O'Reilly
+#+DATE: 2026
+
+* Overview
+
+playlisp is a Common Lisp library for parsing extended M3U playlist files
+into CLOS objects. It was written for dynamic playlist support in the
+Asteroid Radio project.
+
+The parser is built on [[https://github.com/fade/parsector][parsector]], a monadic parser combinator library, and
+supports arithmetic expressions in =EXTINF= duration fields (e.g.
+=(3*60)+45= for 225 seconds).
+
+* License
+
+GNU Affero General Public License v3
+
+* Dependencies
+
+- [[https://github.com/fade/parsector][parsector]] -- parser combinator library
+- [[https://github.com/vseloved/rutils][rutils]]
+- [[https://github.com/sykopomp/taglib][taglib]]
+- [[https://github.com/sharplispers/alexandria][alexandria]]
+- [[https://github.com/Shinmera/parachute][parachute]] -- (test suite only)
+
+* Installation
+
+Clone the repository and ensure it is visible to ASDF (e.g. via
+=asdf:*central-registry*= or a source registry configuration):
+
+#+begin_src lisp
+(push (truename "path/to/playlisp/") asdf:*central-registry*)
+(asdf:load-system :playlisp)
+(asdf:load-system :playlisp/parser)
+#+end_src
+
+* M3U Format
+
+playlisp parses the extended M3U format. A playlist file looks like this:
+
+#+begin_example
+#EXTM3U
+#PLAYLIST:Underworld & Friends
+#PHASE:Underworld & Friends
+#DURATION:6 hours (approx)
+#CURATOR:Asteroid Radio
+#DESCRIPTION:Underworld and adjacent electronic artists
+#EXTINF:-1,Underworld - Born Slippy (Nuxx)
+/app/music/Underworld/01 Born Slippy (Nuxx).flac
+#EXTINF:(3*60)+45,Orbital - Halcyon
+/app/music/Orbital/Halcyon.flac
+#EXTINF:180,The Chemical Brothers - Block Rockin' Beats
+/app/music/Chemical Brothers/Block Rockin Beats.mp3
+#+end_example
+
+The parser recognizes:
+
+- =#EXTM3U= header (required)
+- Metadata lines: =#KEY:value= -- keys are interned as keywords
+- Track entries: =#EXTINF:duration,title= followed by a file path
+- Duration expressions: integers, =-1= for indefinite/live, or arithmetic like =(3*60)+45=
+- Comment lines (starting with =;=) and blank lines (silently skipped)
+- Files with or without a trailing newline
+
+The following metadata keys are mapped to playlist slots:
+
+| Key           | Slot                 |
+|---------------+----------------------|
+| =#PLAYLIST:=    | =playlist-name=        |
+| =#PHASE:=       | =playlist-phase=       |
+| =#DURATION:=    | =playlist-duration=    |
+| =#CURATOR:=     | =playlist-curator=     |
+| =#DESCRIPTION:= | =playlist-description= |
+
+* CLOS Classes
+
+** =playlist=
+
+Represents a parsed M3U playlist.
+
+| Accessor             | Initarg               | Description                          |
+|----------------------+-----------------------+--------------------------------------|
+| =playlist-name=        | =:playlist-name=        | Name of the playlist (required)      |
+| =playlist-phase=       | =:playlist-phase=       | Phase/mood segment name              |
+| =playlist-duration=    | =:playlist-duration=    | Human-readable total duration string |
+| =playlist-curator=     | =:playlist-curator=     | Who curated the playlist             |
+| =playlist-description= | =:playlist-description= | Description of mood/tone             |
+| =playlist-elements=    | =:playlist-elements=    | List of =track= instances              |
+
+Constructor: =(make-playlist name &key phase duration curator description elements)=
+
+The =curator= defaults to the value of the =USER= environment variable.
+
+** =track=
+
+Represents a single track in a playlist.
+
+| Accessor   | Initarg     | Description                             |
+|------------+-------------+-----------------------------------------|
+| =title=      | =:title=      | Track title                             |
+| =artist=     | =:artist=     | Artist name                             |
+| =track-path= | =:track-path= | Path to the media file (required)       |
+| =qnumber=    | =:qnumber=    | 1-based position within the playlist    |
+| =runtime=    | =:runtime=    | Duration in seconds (=-1= for indefinite) |
+
+Constructor: =(make-track title path &key artist runtime position)=
+
+* Usage
+
+** Parsing a playlist file
+
+#+begin_src lisp
+(asdf:load-system :playlisp/parser)
+
+(defvar *playlist*
+  (playlisp/parser:parse-m3u-file #p"/path/to/playlist.m3u"))
+
+(playlisp:playlist-name *playlist*)
+;; => "Underworld & Friends"
+
+(playlisp:playlist-curator *playlist*)
+;; => "Asteroid Radio"
+
+(length (playlisp:playlist-elements *playlist*))
+;; => 45
+#+end_src
+
+** Parsing a string
+
+#+begin_src lisp
+(defvar *playlist*
+  (playlisp/parser:parse-m3u
+    (format nil "#EXTM3U~%#PLAYLIST:My Mix~%#EXTINF:225,Artist - Song~%/music/song.mp3~%")))
+
+(playlisp:playlist-name *playlist*)
+;; => "My Mix"
+#+end_src
+
+** Accessing tracks
+
+#+begin_src lisp
+(let ((track (first (playlisp:playlist-elements *playlist*))))
+  (playlisp:title track)       ;; => "Underworld - Born Slippy (Nuxx)"
+  (playlisp:runtime track)     ;; => -1
+  (playlisp:track-path track)  ;; => "/app/music/.../01 Born Slippy (Nuxx).flac"
+  (playlisp:qnumber track))    ;; => 1
+#+end_src
+
+** Constructing playlists programmatically
+
+#+begin_src lisp
+(defvar *my-playlist*
+  (playlisp:make-playlist "Late Night Session"
+    :phase "Downtempo"
+    :curator "fade"
+    :description "Ambient and downtempo selections"
+    :elements (list (playlisp:make-track "Boards of Canada - Dayvan Cowboy"
+                                         "/music/boc/dayvan-cowboy.flac"
+                                         :runtime 315
+                                         :position 1)
+                    (playlisp:make-track "Tycho - A Walk"
+                                         "/music/tycho/a-walk.flac"
+                                         :runtime 384
+                                         :position 2))))
+#+end_src
+
+** Iterating over tracks
+
+#+begin_src lisp
+(dolist (track (playlisp:playlist-elements *playlist*))
+  (format t "~3D. ~A (~A sec) ~A~%"
+          (playlisp:qnumber track)
+          (playlisp:title track)
+          (playlisp:runtime track)
+          (playlisp:track-path track)))
+#+end_src
+
+* Packages
+
+| Package            | Description                                 |
+|--------------------+---------------------------------------------|
+| =playlisp=         | CLOS class definitions and constructors     |
+| =playlisp/parser=  | M3U parser built on parsector               |
+| =playlisp/tests=   | Test suite (parachute)                      |
+
+* Running Tests
+
+#+begin_src lisp
+(asdf:test-system :playlisp/tests)
+#+end_src
+
+Or from the command line:
+
+#+begin_src shell
+sbcl --non-interactive \
+  --eval '(push (truename "path/to/playlisp/") asdf:*central-registry*)' \
+  --eval '(push (truename "path/to/parsector/") asdf:*central-registry*)' \
+  --eval '(asdf:test-system :playlisp/tests)'
+#+end_src

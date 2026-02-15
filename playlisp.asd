@@ -13,7 +13,8 @@
                #:rutils
                #:taglib
                #:alexandria)
-  :components ((:file "playlisp")))
+  :components ((:file "playlisp"))
+  :in-order-to ((asdf:test-op (asdf:test-op #:playlisp/tests))))
 
 (asdf:defsystem #:playlisp/tests
   :description "Test suite for playlisp"
