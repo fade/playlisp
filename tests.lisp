@@ -100,7 +100,7 @@
 
 (define-test m3u-parser-integration-test
   :parent playlisp-tests
-  (let* ((file-path "/home/fade/SourceCode/lisp/playlisp/playlists/underworld-and-friends.m3u")
+  (let* ((file-path (asdf:system-relative-pathname :playlisp "playlists/underworld-and-friends.m3u"))
          (playlist (parse-m3u-file file-path)))
     (is eq 'playlist (type-of playlist))
     (is string= "Underworld & Friends" (playlist-name playlist))
