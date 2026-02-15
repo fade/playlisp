@@ -8,11 +8,11 @@
   :author "Brian O'Reilly <fade@deepsky.com>"
   :license "GNU AFFERO GENERAL PUBLIC LICENSE V.3"
   :version "0.1.0"
-
   :depends-on (#:parsector
                #:rutils
                #:taglib
-               #:alexandria)
+               #:alexandria
+               #:playlisp/parser)
   :components ((:file "playlisp"))
   :in-order-to ((asdf:test-op (asdf:test-op #:playlisp/tests))))
 
