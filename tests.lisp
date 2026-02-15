@@ -145,3 +145,9 @@
   ;; "3-" looks like a partial expression; parser should backtrack and parse 3 as plain duration
   (let ((playlist (parse-m3u (format nil "#EXTM3U~%#EXTINF:3,Backtrack Test~%/path.mp3~%"))))
     (is = 3 (runtime (first (playlist-elements playlist))))))
+
+(define-test latin-1-should-work
+  :parent playlisp-tests
+  (let ((playlist (parse-m3u-file (asdf:system-relative-pathname :playlisp "playlists/Latin-1-LOL.m3u"))))
+    (is = 27 (length (playlist-elements playlist)))))
+

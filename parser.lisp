@@ -1,7 +1,8 @@
 ;;; parser.lisp - M3U Playlist Parser for playlisp
 
 (uiop:define-package #:playlisp/parser
-  (:use #:cl #:parsector #:playlisp)
+  (:use #:cl #:parsector #:playlisp
+        #:auto-text)
   (:export #:parse-m3u
            #:parse-m3u-file
            #:extm3u-header
@@ -165,7 +166,10 @@
   "Parses an M3U playlist string into a PLAYLIST instance."
   (parse 'm3u-parser (make-string-input-stream string)))
 
-(defun parse-m3u-file (pathname)
+(defun parse-m3u-file (pathname &key (encoding :utf8))
   "Parses an M3U playlist file into a PLAYLIST instance."
-  (with-open-file (stream pathname :direction :input)
-    (parse 'm3u-parser stream)))
+  (let* ((file-path pathname)
+         (analysis (auto-text:analyze file-path :silent t))
+         (encoding (or (getf analysis :encoding) encoding)))
+    (with-open-file (stream pathname :direction :input :external-format encoding)
+      (parse 'm3u-parser stream))))
