@@ -2,30 +2,20 @@
 
 (uiop:define-package #:playlisp/parser
   (:use #:cl #:parsector #:playlisp)
-  (:export #:parse-m3u-file))
+  (:export #:parse-m3u
+           #:parse-m3u-file
+           #:extm3u-header
+           #:metadata-line
+           #:extinf-line
+           #:path-line
+           #:track-entry
+           #:blank-line
+           #:playlist-line
+           #:m3u-parser))
 
 (in-package #:playlisp/parser)
 
-;;; --- Data Structures ---
-
-(defstruct m3u-playlist
-  (metadata nil :type list)
-  (tracks nil :type list))
-
-(defstruct m3u-track
-  (duration 0 :type integer)
-  (artist "" :type string)
-  (title "" :type string)
-  (path "" :type string))
-
 ;;; --- Utility Parsers ---
-
-(defun end-of-line-parser ()
-  (or! (char-of #\Newline)
-       (progn! (char-of #\Return) (char-of #\Newline))))
-
-(defun any-char-except-eol-parser ()
-  (char-if (lambda (c) (not (or (char= c #\Newline) (char= c #\Return))))))
 
 (defun whitespace ()
   "Parse zero or more spaces or tabs (not newlines)."
@@ -36,8 +26,6 @@
           (let! ((chars (many-till (any-char) (lookahead (end-of-line)))))
             (ok (coerce chars 'string)))
           (end-of-line)))
-
-
 
 ;;; --- Arithmetic Expression Parsers (for EXTINF duration) ---
 
@@ -77,7 +65,7 @@
   (chainl1 'term-expr
            (or! (add-op) (sub-op))))
 
-fn;;; --- M3U Specific Parsers ---
+;;; --- M3U Specific Parsers ---
 
 (defparser extm3u-header ()
   (prog1!
@@ -104,7 +92,9 @@ fn;;; --- M3U Specific Parsers ---
 
 (defparser extinf-line ()
   (let! ((_ (string-of "#EXTINF:"))
-         (duration (or! 'expr-parser (progn! (char-of #\-) (natural))))
+         (duration (or! 'expr-parser
+                        (let! ((_ (char-of #\-)) (n (natural)))
+                          (ok (- n)))))
          (_ (char-of #\,))
          (chars (many-till (any-char) (lookahead (end-of-line)))))
     (ok (list :duration duration :title (coerce chars 'string)))))
@@ -118,9 +108,10 @@ fn;;; --- M3U Specific Parsers ---
   (let! ((inf 'extinf-line)
          (_ (end-of-line))
          (path (optional 'path-line)))
-    (ok (make-m3u-track :duration (getf inf :duration)
-                        :title (getf inf :title)
-                        :path (or path "")))))
+    (ok (make-instance 'track
+                       :title (getf inf :title)
+                       :runtime (getf inf :duration)
+                       :track-path (or path "")))))
 
 ;; Parse a blank line (only whitespace before end-of-line).
 (defparser blank-line ()
@@ -138,25 +129,39 @@ fn;;; --- M3U Specific Parsers ---
                                   (_ (optional (end-of-line))))
                              (ok line))
                            (eof))))
-    (let ((playlist (make-m3u-playlist)))
-      (dolist (line lines playlist)
+    (let ((metadata nil)
+          (tracks nil))
+      (dolist (line lines)
         (cond
-          ((consp line) ; Metadata
-           (push line (m3u-playlist-metadata playlist)))
-          ((typep line 'm3u-track)
-           (push line (m3u-playlist-tracks playlist)))))
-      (setf (m3u-playlist-metadata playlist) (nreverse (m3u-playlist-metadata playlist)))
-      (setf (m3u-playlist-tracks playlist) (nreverse (m3u-playlist-tracks playlist)))
-      (ok playlist))))
+          ((consp line)
+           (push line metadata))
+          ((typep line 'track)
+           (push line tracks))))
+      (setf metadata (nreverse metadata))
+      (setf tracks (nreverse tracks))
+      ;; Number tracks by position
+      (loop for track in tracks
+            for i from 1
+            do (setf (qnumber track) i))
+      (let ((name (or (cdr (assoc :PLAYLIST metadata)) "Untitled"))
+            (phase (cdr (assoc :PHASE metadata)))
+            (duration (cdr (assoc :DURATION metadata)))
+            (curator (cdr (assoc :CURATOR metadata)))
+            (description (cdr (assoc :DESCRIPTION metadata))))
+        (ok (make-playlist name
+                           :phase phase
+                           :duration duration
+                           :curator curator
+                           :description description
+                           :elements tracks))))))
 
 ;;; --- Toplevel Function ---
 
 (defun parse-m3u (string)
-  "Parses an M3U playlist string into an M3U-PLAYLIST struct."
+  "Parses an M3U playlist string into a PLAYLIST instance."
   (parse 'm3u-parser (make-string-input-stream string)))
 
 (defun parse-m3u-file (pathname)
-  "Parses an M3U playlist file into an M3U-PLAYLIST struct."
+  "Parses an M3U playlist file into a PLAYLIST instance."
   (with-open-file (stream pathname :direction :input)
     (parse 'm3u-parser stream)))
-

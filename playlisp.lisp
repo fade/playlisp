@@ -15,7 +15,7 @@
            #:title
            #:artist
            #:track-path
-           #:playlist-position
+           #:qnumber
            #:runtime
            #:make-track
            #:decode-m3u))
@@ -81,11 +81,10 @@ written for dynamic playlist support in the Asteroid Radio project."))
 
 (defun make-track (title path &key (artist nil) (runtime nil) (position nil))
   (make-instance 'track
-                 :qnumber 
+                 :qnumber position
                  :title title
                  :artist artist
                  :track-path path
-                 :playlist-position position
                  :runtime runtime))
 
 ;; ==================================================
