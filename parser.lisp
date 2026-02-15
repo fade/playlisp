@@ -21,9 +21,13 @@
   "Parse zero or more spaces or tabs (not newlines)."
   (skip-many (char-in #(#\Space #\Tab))))
 
+(defun end-of-line-or-eof ()
+  "Match end-of-line or end-of-file."
+  (or! (end-of-line) (eof)))
+
 (defparser comment-line ()
   (prog2! (char-of #\;)
-          (let! ((chars (many-till (any-char) (lookahead (end-of-line)))))
+          (let! ((chars (many-till (any-char) (lookahead (end-of-line-or-eof)))))
             (ok (coerce chars 'string)))
           (end-of-line)))
 
@@ -87,21 +91,21 @@
          (_ (not-followed-by (string-of "EXTM3U")))
          (key 'metadata-key)
          (_ (char-of #\:))
-         (chars (many-till (any-char) (lookahead (end-of-line)))))
+         (chars (many-till (any-char) (lookahead (end-of-line-or-eof)))))
     (ok (cons key (coerce chars 'string)))))
 
 (defparser extinf-line ()
   (let! ((_ (string-of "#EXTINF:"))
-         (duration (or! 'expr-parser
+         (duration (or! (try! 'expr-parser)
                         (let! ((_ (char-of #\-)) (n (natural)))
                           (ok (- n)))))
          (_ (char-of #\,))
-         (chars (many-till (any-char) (lookahead (end-of-line)))))
+         (chars (many-till (any-char) (lookahead (end-of-line-or-eof)))))
     (ok (list :duration duration :title (coerce chars 'string)))))
 
 (defparser path-line ()
   (let! ((_ (not-followed-by (char-of #\#)))
-         (chars (many-till (any-char) (lookahead (end-of-line)))))
+         (chars (many-till (any-char) (lookahead (end-of-line-or-eof)))))
     (ok (coerce chars 'string))))
 
 (defparser track-entry ()
@@ -115,7 +119,7 @@
 
 ;; Parse a blank line (only whitespace before end-of-line).
 (defparser blank-line ()
-  (prog1! (whitespace) (lookahead (end-of-line)) (ok :blank)))
+  (prog1! (whitespace) (lookahead (end-of-line-or-eof)) (ok :blank)))
 
 (defparser playlist-line ()
   (choice (list (try! 'track-entry)

@@ -115,3 +115,33 @@
     ;; Check tracks are numbered
     (is = 1 (qnumber (first (playlist-elements playlist))))
     (is = 45 (qnumber (car (last (playlist-elements playlist)))))))
+
+;;; --- Edge Case Tests ---
+
+(define-test no-trailing-newline
+  :parent playlisp-tests
+  (let ((playlist (parse-m3u (format nil "#EXTM3U~%#EXTINF:180,Test Song~%/path/to/song.mp3"))))
+    (is = 1 (length (playlist-elements playlist)))
+    (let ((track (first (playlist-elements playlist))))
+      (is string= "Test Song" (title track))
+      (is = 180 (runtime track))
+      (is string= "/path/to/song.mp3" (track-path track)))))
+
+(define-test no-trailing-newline-multiple
+  :parent playlisp-tests
+  (let ((playlist (parse-m3u (format nil "#EXTM3U~%#EXTINF:180,Song A~%/a.mp3~%#EXTINF:240,Song B~%/b.mp3"))))
+    (is = 2 (length (playlist-elements playlist)))
+    (is string= "/a.mp3" (track-path (first (playlist-elements playlist))))
+    (is string= "/b.mp3" (track-path (second (playlist-elements playlist))))))
+
+(define-test no-trailing-newline-metadata
+  :parent playlisp-tests
+  (let ((playlist (parse-m3u (format nil "#EXTM3U~%#PLAYLIST:No Newline~%#EXTINF:100,Song~%/song.mp3"))))
+    (is string= "No Newline" (playlist-name playlist))
+    (is = 1 (length (playlist-elements playlist)))))
+
+(define-test malformed-expression-backtrack
+  :parent playlisp-tests
+  ;; "3-" looks like a partial expression; parser should backtrack and parse 3 as plain duration
+  (let ((playlist (parse-m3u (format nil "#EXTM3U~%#EXTINF:3,Backtrack Test~%/path.mp3~%"))))
+    (is = 3 (runtime (first (playlist-elements playlist))))))
