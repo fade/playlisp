@@ -1,0 +1,152 @@
+#+TITLE: M3U Parser Report
+#+AUTHOR: Glenn Thompson
+#+DATE: 2026-02-07
+
+* Summary
+
+Ran the M3U parser through edge-case testing in SBCL 2.6.1 REPL.
+The existing 26-test suite passes, but three "bugs" surfaced with
+real-world inputs.
+
+* Environment
+
+- SBCL 2.6.1
+- Branch: parsector
+- Commit: 549569b
+
+* Bug 1: Parse Fails on Files Without Trailing Newline (CONFIRMED)
+
+** Severity: High
+
+This is the most likely to bite in production. A lot of editors and tools
+do not guarantee a final newline in files (windows behavior).
+
+** Reproduction
+
+#+begin_src lisp
+(parse-m3u (format nil "#EXTM3U~%#EXTINF:180,Test Song~%/path/to/song.mp3"))
+;; => ERROR: NIL:3:0: Expected (EOF ("#EXTINF:" #\# #\; crlf))
+#+end_src
+
+Adding a trailing newline makes it work:
+
+#+begin_src lisp
+(parse-m3u (format nil "#EXTM3U~%#EXTINF:180,Test Song~%/path/to/song.mp3~%"))
+;; => #S(M3U-PLAYLIST ...) ;; works fine
+#+end_src
+#+RESULTS:
+: [exit 1]
+: Unsupported src language: lisp
+
+** Root Cause
+
+~path-line~ (line 117) uses ~many-till (any-char) (lookahead (end-of-line))~
+which requires a newline character to terminate. At EOF without a newline,
+~end-of-line~ fails, so the path is never captured and the whole parse fails.
+
+Same issue affects ~extinf-line~ (line 114) and ~metadata-line~ (line 105)
+and ~comment-line~ (line 41) â€” all use ~many-till ... (lookahead (end-of-line))~.
+
+** Suggested Fix
+
+Define a line terminator that accepts either ~end-of-line~ or ~eof~:
+
+#+begin_src lisp
+(defun end-of-line-or-eof ()
+  "Match end-of-line or end-of-file."
+  (or! (end-of-line) (eof)))
+#+end_src
+
+Then replace ~(lookahead (end-of-line))~ with ~(lookahead (end-of-line-or-eof))~
+in ~path-line~, ~extinf-line~, ~metadata-line~, and ~comment-line~.
+
+* Bug 2: Expression Parser Consumes Input Then Fails (CONFIRMED)
+
+** Severity: Medium
+
+Malformed duration expressions like ~3-~ cause a full parse failure
+instead of falling through to simpler parsing.
+
+** Reproduction
+
+#+begin_src lisp
+(parse-m3u (format nil "#EXTM3U~%#EXTINF:3-,Bad Expr~%/path.mp3~%"))
+;; => ERROR: NIL:2:0: Expected (EOF ((#\( Satisfies ...) something else ...))
+#+end_src
+
+** Root Cause
+
+In ~extinf-line~ (line 108-115):
+
+#+begin_src lisp
+(duration (or! 'expr-parser
+               (let! ((_ (char-of #\-)) (n (natural)))
+                 (ok (- n)))))
+#+end_src
+
+~expr-parser~ uses ~chainl1~ which successfully parses ~3~, then tries
+operators. ~sub-op~ consumes ~-~, then the next term fails. Since input
+has been consumed, ~or!~ cannot backtrack to the negative-duration branch.
+
+** Suggested Fix
+
+Wrap the expression parser branch in ~try!~:
+
+#+begin_src lisp
+(duration (or! (try! 'expr-parser)
+               (let! ((_ (char-of #\-)) (n (natural)))
+                 (ok (- n)))))
+#+end_src
+
+This ensures full backtracking if the expression parser partially
+matches but ultimately fails.
+
+* Bug 3 (Not a Bug): Track Without Path
+
+** Severity: None â€” working as intended
+
+#+begin_src lisp
+(parse-m3u (format nil "#EXTM3U~%#EXTINF:100,Song A~%#EXTINF:200,Song B~%/b.mp3~%"))
+;; Tracks: 2
+;;   Song A -> ''       ;; empty path, correct
+;;   Song B -> '/b.mp3'
+#+end_src
+
+~track-entry~ uses ~(optional 'path-line)~ which correctly returns ~""~
+when the next line starts with ~#~. This is the intended behavior per
+line 128: ~(or path "")~.
+
+* Existing Test Suite
+
+All 26 tests in ~test-m3u.lisp~ pass. The bugs are not covered because
+all test strings end with trailing newlines and use well-formed durations.
+
+| Test                     | Status |
+|--------------------------+--------|
+| simple-playlist          | PASS   |
+| playlist-metadata        | PASS   |
+| expression-duration      | PASS   |
+| negative-duration        | PASS   |
+| multiple-tracks          | PASS   |
+| complex-expression       | PASS   |
+| blank-lines              | PASS   |
+| extended-metadata        | PASS   |
+| underworld-playlist-file | PASS   |
+
+* Suggested Test Additions
+
+#+begin_src lisp
+(define-test no-trailing-newline
+  :parent m3u-parser
+  (let ((playlist (m3u:parse-m3u (format nil "#EXTM3U~%#EXTINF:180,Test Song~%/path/to/song.mp3"))))
+    (is = 1 (length (m3u:m3u-playlist-tracks playlist)))
+    (is string= "/path/to/song.mp3"
+        (m3u:m3u-track-path (first (m3u:m3u-playlist-tracks playlist))))))
+
+(define-test no-trailing-newline-multiple
+  :parent m3u-parser
+  (let ((playlist (m3u:parse-m3u (format nil "#EXTM3U~%#EXTINF:180,Song A~%/a.mp3~%#EXTINF:240,Song B~%/b.mp3"))))
+    (is = 2 (length (m3u:m3u-playlist-tracks playlist)))
+    (is string= "/b.mp3"
+        (m3u:m3u-track-path (second (m3u:m3u-playlist-tracks playlist))))))
+#+end_src
