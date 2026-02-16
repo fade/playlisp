@@ -29,7 +29,7 @@ GNU Affero General Public License v3
 Clone the repository and ensure it is visible to ASDF (e.g. via
 =asdf:*central-registry*= or a source registry configuration):
 
-#+begin_src lisp
+#+begin_src common-lisp
 (push (truename "path/to/playlisp/") asdf:*central-registry*)
 (asdf:load-system :playlisp)
 (asdf:load-system :playlisp/parser)
@@ -110,16 +110,18 @@ Constructor: =(make-track title path &key artist runtime position)=
 
 ** Parsing a playlist file
 
-#+begin_src lisp
-(asdf:load-system :playlisp/parser)
+#+begin_src common-lisp
+(asdf:load-system :playlisp)
+
+;; the #:playlisp package re-exports the parser API
 
 (defvar *playlist*
-  (playlisp/parser:parse-m3u-file #p"/path/to/playlist.m3u"))
+  (parse-m3u-file #p"/path/to/playlist.m3u"))
 
-(playlisp:playlist-name *playlist*)
+(playlist-name *playlist*)
 ;; => "Underworld & Friends"
 
-(playlisp:playlist-curator *playlist*)
+(playlist-curator *playlist*)
 ;; => "Asteroid Radio"
 
 (length (playlisp:playlist-elements *playlist*))
@@ -128,18 +130,18 @@ Constructor: =(make-track title path &key artist runtime position)=
 
 ** Parsing a string
 
-#+begin_src lisp
+#+begin_src common-lisp
 (defvar *playlist*
-  (playlisp/parser:parse-m3u
+  (parse-m3u
     (format nil "#EXTM3U~%#PLAYLIST:My Mix~%#EXTINF:225,Artist - Song~%/music/song.mp3~%")))
 
-(playlisp:playlist-name *playlist*)
+(playlist-name *playlist*)
 ;; => "My Mix"
 #+end_src
 
 ** Accessing tracks
 
-#+begin_src lisp
+#+begin_src common-lisp
 (let ((track (first (playlisp:playlist-elements *playlist*))))
   (playlisp:title track)       ;; => "Underworld - Born Slippy (Nuxx)"
   (playlisp:runtime track)     ;; => -1
@@ -149,7 +151,7 @@ Constructor: =(make-track title path &key artist runtime position)=
 
 ** Constructing playlists programmatically
 
-#+begin_src lisp
+#+begin_src common-lisp
 (defvar *my-playlist*
   (playlisp:make-playlist "Late Night Session"
     :phase "Downtempo"
@@ -167,7 +169,7 @@ Constructor: =(make-track title path &key artist runtime position)=
 
 ** Iterating over tracks
 
-#+begin_src lisp
+#+begin_src common-lisp
 (dolist (track (playlisp:playlist-elements *playlist*))
   (format t "~3D. ~A (~A sec) ~A~%"
           (playlisp:qnumber track)
@@ -178,16 +180,16 @@ Constructor: =(make-track title path &key artist runtime position)=
 
 * Packages
 
-| Package            | Description                                 |
-|--------------------+---------------------------------------------|
-| =playlisp=         | CLOS class definitions and constructors     |
-| =playlisp/parser=  | M3U parser built on parsector               |
-| =playlisp/tests=   | Test suite (parachute)                      |
+| Package         | Description                                         |
+|-----------------+-----------------------------------------------------|
+| =playlisp=        | API to operate on parsed m3u files.                 |
+| =playlisp/parser= | M3U parser, CLOS class definitions and constructors |
+| =playlisp/tests=  | Test suite (parachute)                              |
 
 * Running Tests
 
-#+begin_src lisp
-(asdf:test-system :playlisp/tests)
+#+begin_src common-lisp
+(asdf:test-system :playlisp)
 #+end_src
 
 Or from the command line:
