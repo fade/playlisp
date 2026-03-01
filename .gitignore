@@ -16,3 +16,5 @@
 *.wx64fsl
 *.wx32fsl
 /slime.lisp
+/quicklisp-manifest.txt
+/buildapp
