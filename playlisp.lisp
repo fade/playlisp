@@ -1,8 +1,7 @@
 ;; -*-lisp-*-
 
 (uiop:define-package #:playlisp
-  (:use #:cl
-        #:parsector)
+  (:use #:cl)
   (:use-reexport #:playlisp/parser)
   (:export nil))
 

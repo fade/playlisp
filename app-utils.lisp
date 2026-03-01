@@ -1,9 +1,15 @@
 ;; -*-lisp-*-
 
-(defpackage :playlisp.app-utils
-            (:use :cl)
-            (:export :internal-disable-debugger)
-            (:export :internal-quit))
+(uiop:define-package :playlisp/apputils
+  (:use :cl)
+  (:export
+   :internal-disable-debugger
+   :internal-quit))
+
+;; (defpackage :playlisp.app-utils
+;;   (:use :cl)
+;;   (:export :internal-disable-debugger)
+;;   (:export :internal-quit))
 
 (in-package :playlisp.app-utils)
   

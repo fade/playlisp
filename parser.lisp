@@ -55,8 +55,8 @@ mood of the playlist segment")
     :accessor playlist-description :initarg :playlist-description
     :initform nil
     :documentation "A human readable description of the playlist's overall mood or tone of
-
 the playlist.")
+   
    (playlist-elements
     :accessor playlist-elements :initarg :playlist-elements
     :initform (list)

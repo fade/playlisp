@@ -10,10 +10,13 @@
   :version "0.1.0"
   :depends-on (#:parsector
                #:rutils
-               #:taglib
+               ;; #:taglib
                #:alexandria
-               #:playlisp/parser)
-  :components ((:file "playlisp"))
+               ;; #:playlisp/parser
+               #:playlisp/m3u-operations
+               )
+  :components ((:file "package")
+               (:file "playlisp"))
   :in-order-to ((asdf:test-op (asdf:test-op #:playlisp/tests))))
 
 (asdf:defsystem #:playlisp/tests
