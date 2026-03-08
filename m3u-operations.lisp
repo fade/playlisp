@@ -28,7 +28,8 @@ Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
   "set the qnumber for a list of track objects to reflect is position in the playlist."
   (loop for track in list-of-tracks
         for index from 1
-        do (setf (qnumber track) index)))
+        do (setf (qnumber track) index)
+        finally (return list-of-tracks)))
 
 (defmethod (setf add-playlist-element) ((new-track track) (playlist playlist) (index number))
   "given an instance of 'PLAYLIST, insert NEW-TRACK an instance of 'TRACK  at the
@@ -44,8 +45,7 @@ Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
     (cond ((= index -1)                 ;; end of list
            (setf (playlist-elements playlist) (append elements (list new-track))))
           ((= index 0) ;; front of list
-           (setf (playlist-elements playlist) (append (list new-track) elements))
-           ())
+           (setf (playlist-elements playlist) (append (list new-track) elements)))
           (t
            (setf (playlist-elements playlist) (resmoother (append (subseq elements 0 index)
                                                                   (list new-track)
