@@ -1,7 +1,8 @@
 ;;; m3u-operations.lisp - functions to maniuplate playlist objects
 
 (uiop:define-package #:playlisp/m3u-operations
-  (:use #:cl #:rutils)
+  (:use #:cl #:alexandria)
+  (:local-nicknames (:a :alexandria))
   (:use-reexport #:playlisp/parser)
   (:nicknames :m3uop)
   (:export
@@ -9,16 +10,17 @@
 
 (in-package :playlisp/m3u-operations)
 
-;; ;;; create a new playlist
+;;; create a new playlist
 
 (defun read-playlist (playlist-path)
   "Read a playlist from PLAYLIST-PATH and return an instance of playlist/parser:PLAYLIST"
   (parse-m3u-file playlist-path))
 
 
-;; ;;; playlist element sanitizers
+;;; playlist element sanitizers
 
-;; ;;; add a track to a playlist
+
+;;; add a track to a playlist
 
 (defgeneric (setf add-playlist-element) (new-track playlist position)
   (:documentation "Setter for playlist-elements. 
@@ -39,10 +41,10 @@ Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
    *track* into the logical fourth position of the playlist-elements
    list."
   (let* ((elements (playlist-elements playlist))
-         (index (1- index)))     ; we have one-indexed the playlist
-                                        ; elements, for silly humanz, but our
-                                        ; lists still start at zero
-    (cond ((= index -1)                 ;; end of list
+         (index (if (>= index 0) ;; if it's not negative, normalize it. Otherwise just return it.
+                    (1- index)
+                    index)))
+    (cond ((= index -1)
            (setf (playlist-elements playlist) (append elements (list new-track))))
           ((= index 0) ;; front of list
            (setf (playlist-elements playlist) (append (list new-track) elements)))
@@ -52,11 +54,24 @@ Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
                                                       (nthcdr index elements)))))))
 
 (defmethod (setf add-playlist-element) :after ((new-track track) (playlist playlist) (index number))
+  "after all the setting is done, zip down the list setting each track's
+qnumber relative to its position in the list."
   (setf (playlist-elements playlist)
         (resmoother (playlist-elements playlist))))
 
-;; ;;; move a track within a playlist
+;;; move a track within a playlist
 
-;; ;;; delete a track from a playlist
+(defgeneric rmtrack (track playlist)
+  (:documentation "Remove a track from the playlist-elements list in a playlist object"))
 
-;; ;;; reify a playlist into an m3u file for external consumption
+(defmethod rmtrack ((track track) (playlist playlist))
+  (let* ((elements (playlist-elements playlist))
+         (tname (track-title track))
+         (tartist (track-artist track))
+         (index (qnumber track)))
+    ))
+
+
+;;; delete a track from a playlist
+
+;;; reify a playlist into an m3u file for external consumption
