@@ -47,9 +47,14 @@ Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
           ((= index 0) ;; front of list
            (setf (playlist-elements playlist) (append (list new-track) elements)))
           (t
-           (setf (playlist-elements playlist) (resmoother (append (subseq elements 0 index)
-                                                                  (list new-track)
-                                                                  (nthcdr index elements))))))))
+           (setf (playlist-elements playlist) (append (subseq elements 0 index)
+                                                      (list new-track)
+                                                      (nthcdr index elements)))))))
+
+(defmethod (setf add-playlist-element) :after ((new-track track) (playlist playlist) (index number))
+  (setf (playlist-elements playlist)
+        (resmoother (playlist-elements playlist))))
+
 ;; ;;; move a track within a playlist
 
 ;; ;;; delete a track from a playlist
