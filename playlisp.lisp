@@ -3,16 +3,19 @@
 (uiop:define-package #:playlisp
   (:use #:cl)
   (:use-reexport #:playlisp/parser)
-  (:export nil))
+  (:import-from #:playlisp/src/app #:run-tui)
+  (:export #:run-tui
+           #:-main))
 
 (in-package :playlisp)
 
 
-
 ;; ==================================================
-;;  Parsing the playlist data
+;;  Entry point
 ;; ==================================================
 
 (defun -main (&optional args)
-  (format t "~a~%" "I don't do much yet"))
+  "Launch the playlisp TUI.  Pass an M3U file path as the first argument."
+  (let ((filepath (when (consp args) (first args))))
+    (run-tui filepath)))
 
