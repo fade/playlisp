@@ -490,6 +490,42 @@
           (setf (app-message *app*)
                 (format nil "Save error: ~A" e)))))))
 
+;;; ── Edit playlist metadata ────────────────────────────────────────
+
+(defun edit-playlist-metadata ()
+  "Prompt to edit playlist metadata fields."
+  (let ((pl (app-playlist *app*)))
+    (when pl
+      ;; Edit playlist name
+      (let ((new-name (read-input-line
+                       (format nil "Playlist name [~A]: "
+                               (or (playlist-name pl) "")))))
+        (when (and new-name (> (length new-name) 0))
+          (setf (playlist-name pl) new-name)))
+      (full-render)
+      ;; Edit phase
+      (let ((new-phase (read-input-line
+                        (format nil "Phase [~A]: "
+                                (or (playlist-phase pl) "")))))
+        (when (and new-phase (> (length new-phase) 0))
+          (setf (playlist-phase pl) new-phase)))
+      (full-render)
+      ;; Edit curator
+      (let ((new-curator (read-input-line
+                          (format nil "Curator [~A]: "
+                                  (or (playlist-curator pl) "")))))
+        (when (and new-curator (> (length new-curator) 0))
+          (setf (playlist-curator pl) new-curator)))
+      (full-render)
+      ;; Edit description
+      (let ((new-desc (read-input-line
+                       (format nil "Description [~A]: "
+                               (or (playlist-description pl) "")))))
+        (when (and new-desc (> (length new-desc) 0))
+          (setf (playlist-description pl) new-desc)))
+      (setf (app-message *app*) "Metadata updated")
+      (full-render))))
+
 ;;; ── Open playlist ─────────────────────────────────────────────────
 
 (defun open-playlist ()
@@ -698,7 +734,12 @@
            (setf (tracklist-panel-cursor tl) 0
                  (tracklist-panel-scroll-offset tl) 0)))
        (sync-details)
-       (setf (app-message *app*) "New playlist created")))
+       (setf (app-message *app*) "New playlist created"))
+
+      ;; Edit playlist metadata
+      ((eql char #\e)
+       (edit-playlist-metadata)
+       (return-from handle-key)))
 
     ;; Always re-render after a keypress
     (full-render)))
