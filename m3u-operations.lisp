@@ -6,7 +6,9 @@
   (:use-reexport #:playlisp/parser)
   (:nicknames :m3uop)
   (:export
-   #:add-playlist-element))
+   #:add-playlist-element
+   #:find-track
+   #:rmtrack))
 
 (in-package :playlisp/m3u-operations)
 
@@ -82,17 +84,31 @@ qnumber relative to its position in the list."
   (setf (playlist-elements playlist)
         (resmoother (playlist-elements playlist))))
 
-;;; move a track within a playlist
+;;; find a track within a playlist
+
+(defun find-track (playlist key &key (by :title))
+  "Find the first track in PLAYLIST whose field designated by BY matches KEY.
+BY may be :title, :artist, or :qnumber.
+String comparisons are case-insensitive. Returns the matching track or NIL."
+  (find key (playlist-elements playlist)
+        :key (ecase by
+               (:title   #'title)
+               (:artist  #'artist)
+               (:qnumber #'qnumber))
+        :test (if (eq by :qnumber)
+                  #'eql
+                  (lambda (k field) (string-equal k (or field ""))))))
+
+;;; remove a track from a playlist
 
 (defgeneric rmtrack (track playlist)
   (:documentation "Remove a track from the playlist-elements list in a playlist object"))
 
 (defmethod rmtrack ((track track) (playlist playlist))
-  (let* ((elements (playlist-elements playlist))
-         (tname (track-title track))
-         (tartist (track-artist track))
-         (index (qnumber track)))
-    ))
+  "Remove TRACK from PLAYLIST by identity, then renumber the remaining tracks."
+  (setf (playlist-elements playlist)
+        (resmoother (remove track (playlist-elements playlist) :test #'eq)))
+  playlist)
 
 
 ;;; delete a track from a playlist
