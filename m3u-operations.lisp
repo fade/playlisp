@@ -16,15 +16,28 @@
   "Read a playlist from PLAYLIST-PATH and return an instance of playlist/parser:PLAYLIST"
   (parse-m3u-file playlist-path))
 
-(defun make-playlist (pname phase &key (curator (uiop:getenv "USER"))
-                                    (description "Every one a description requires.") (elements nil))
-  "Create an empty instance of the 'PLAYLIST class."
-  (make-instance 'playlist
-                 :playlist-name pname
-                 :playlist-phase phase
-                 :playlist-curator curator
-                 :playlist-description description
-                 :playlist-elements elements))
+;; (defun make-playlist (pname phase &key (curator (uiop:getenv "USER"))
+;;                                     (description "Every one a description requires.") (elements nil))
+;;   "Create an empty instance of the 'PLAYLIST class."
+;;   (make-instance 'playlist
+;;                  :playlist-name pname
+;;                  :playlist-phase phase
+;;                  :playlist-curator curator
+;;                  :playlist-description description
+;;                  :playlist-elements elements))
+
+;; TODO: future local override - when needed, shadow make-playlist here with:
+;; (defun make-playlist (pname &key (phase nil) (duration nil)
+;;                               (curator (uiop:getenv "USER"))
+;;                               (description nil) (elements (list)))
+;;   "Create an empty PLAYLIST instance (m3u-operations variant)."
+;;   (make-instance 'playlist
+;;                  :playlist-name pname
+;;                  :playlist-phase phase
+;;                  :playlist-duration duration
+;;                  :playlist-curator curator
+;;                  :playlist-description description
+;;                  :playlist-elements elements))
 
 
 ;;; playlist element sanitizers
