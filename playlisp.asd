@@ -10,10 +10,10 @@
   :version "0.1.0"
   :depends-on (#:parsector
                #:rutils
-               ;; #:taglib
                #:alexandria
                ;; #:playlisp/parser
                #:playlisp/m3u-operations
+               #:playlisp/src/app
                )
   :components ((:file "package")
                (:file "playlisp"))
