@@ -211,9 +211,11 @@
 ;;; ── File browser ─────────────────────────────────────────────────
 
 (defun open-browser (&optional start-dir &key recursive)
-  "Open the file browser overlay. Starts at START-DIR or music library.
-   If RECURSIVE is T, show all audio files recursively."
-  (let* ((dir (or start-dir *music-library-path*))
+  "Open the file browser overlay. Starts at START-DIR, or *music-library-path*,
+   or current directory if neither is set. If RECURSIVE is T, show all audio files recursively."
+  (let* ((dir (or start-dir
+                  *music-library-path*
+                  (uiop:getcwd)))
          (lay (app-layout *app*))
          (w (layout-width lay))
          (h (layout-height lay))
@@ -462,6 +464,8 @@
       (format out "#PLAYLIST:~A~%" (playlist-name playlist)))
     (when (playlist-phase playlist)
       (format out "#PHASE:~A~%" (playlist-phase playlist)))
+    (when (playlist-duration playlist)
+      (format out "#DURATION:~A~%" (playlist-duration playlist)))
     (when (playlist-curator playlist)
       (format out "#CURATOR:~A~%" (playlist-curator playlist)))
     (when (playlist-description playlist)
@@ -510,6 +514,13 @@
         (when (and new-phase (> (length new-phase) 0))
           (setf (playlist-phase pl) new-phase)))
       (full-render)
+      ;; Edit duration
+      (let ((new-duration (read-input-line
+                           (format nil "Duration [~A]: "
+                                   (or (playlist-duration pl) "")))))
+        (when (and new-duration (> (length new-duration) 0))
+          (setf (playlist-duration pl) new-duration)))
+      (full-render)
       ;; Edit curator
       (let ((new-curator (read-input-line
                           (format nil "Curator [~A]: "
@@ -550,6 +561,19 @@
 
 ;;; ── Render ────────────────────────────────────────────────────────
 
+(defun total-playlist-duration ()
+  "Calculate total duration of all tracks in seconds. Returns NIL if no valid durations."
+  (let ((pl (app-playlist *app*)))
+    (when pl
+      (let ((total 0)
+            (has-duration nil))
+        (dolist (track (playlist-elements pl))
+          (let ((rt (runtime track)))
+            (when (and rt (numberp rt) (> rt 0))
+              (incf total rt)
+              (setf has-duration t))))
+        (when has-duration total)))))
+
 (defun full-render ()
   "Clear and render the full UI."
   (clear-screen)
@@ -561,7 +585,8 @@
     (layout-render-all (app-layout *app*)
                        :mode (string-upcase (symbol-name (app-mode *app*)))
                        :filename (app-filepath *app*)
-                       :track-count (track-count))
+                       :track-count (track-count)
+                       :total-duration (total-playlist-duration))
     ;; Show transient message if any
     (when (app-message *app*)
       (let ((y (layout-status-y (app-layout *app*))))
