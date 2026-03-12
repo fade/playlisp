@@ -26,6 +26,7 @@
   :version "0.1.0"
   :depends-on (#:playlisp
                #:playlisp/parser
+               #:playlisp/m3u-operations
                #:parachute)
   :components ((:file "tests"))
   :perform (asdf:test-op (op c)

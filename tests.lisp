@@ -13,6 +13,10 @@
                 #:m3u-parser
                 #:parse-m3u
                 #:parse-m3u-file)
+  (:import-from #:playlisp/m3u-operations
+                #:find-track
+                #:rmtrack
+                #:add-playlist-element)
   (:shadowing-import-from #:parachute #:fail)
   (:shadowing-import-from #:parsector #:skip))
 
@@ -150,4 +154,104 @@
   :parent playlisp-tests
   (let ((playlist (parse-m3u-file (asdf:system-relative-pathname :playlisp "playlists/Latin-1-LOL.m3u"))))
     (is = 27 (length (playlist-elements playlist)))))
+
+;;; --- m3u-operations tests ---
+
+(defun make-ops-test-playlist ()
+  "Build a 3-track playlist for use in m3u-operations tests."
+  (parse-m3u
+   (format nil "#EXTM3U~%#PLAYLIST:Test Mix~%~
+                #EXTINF:120,Track One~%/music/one.mp3~%~
+                #EXTINF:240,Track Two~%/music/two.mp3~%~
+                #EXTINF:180,Track Three~%/music/three.mp3~%")))
+
+(define-test m3u-operations-tests
+  :parent NIL)
+
+(define-test find-track-tests
+  :parent m3u-operations-tests
+  (let ((pl (make-ops-test-playlist)))
+    ;; Find by :title - exact match
+    (let ((track (find-track pl "Track One" :by :title)))
+      (is string= "Track One" (title track))
+      (is = 1 (qnumber track)))
+    ;; Find by :title - case-insensitive
+    (let ((track (find-track pl "track two" :by :title)))
+      (is string= "Track Two" (title track)))
+    ;; Find by :qnumber
+    (let ((track (find-track pl 3 :by :qnumber)))
+      (is string= "Track Three" (title track))
+      (is = 180 (runtime track)))
+    ;; Not found returns NIL
+    (is eq nil (find-track pl "No Such Track" :by :title))
+    (is eq nil (find-track pl 99 :by :qnumber)))
+  ;; Find by :artist (requires tracks with artist slot populated)
+  (let ((pl (make-playlist "Artist Test"
+                           :elements (list (make-track "Song A" "/a.mp3" :artist "Underworld")
+                                           (make-track "Song B" "/b.mp3" :artist "Orbital")
+                                           (make-track "Song C" "/c.mp3" :artist "Underworld")))))
+    ;; Finds first matching artist
+    (let ((track (find-track pl "Underworld" :by :artist)))
+      (is string= "Song A" (title track)))
+    ;; Case-insensitive artist match
+    (let ((track (find-track pl "orbital" :by :artist)))
+      (is string= "Song B" (title track)))
+    ;; Not found returns NIL
+    (is eq nil (find-track pl "Aphex Twin" :by :artist))))
+
+(define-test rmtrack-tests
+  :parent m3u-operations-tests
+  ;; Remove from middle, check count and renumbering
+  (let* ((pl (make-ops-test-playlist))
+         (track (find-track pl "Track Two" :by :title)))
+    (rmtrack track pl)
+    (is = 2 (length (playlist-elements pl)))
+    (is string= "Track One"   (title (first  (playlist-elements pl))))
+    (is string= "Track Three" (title (second (playlist-elements pl))))
+    (is = 1 (qnumber (first  (playlist-elements pl))))
+    (is = 2 (qnumber (second (playlist-elements pl)))))
+  ;; Remove first track
+  (let* ((pl (make-ops-test-playlist))
+         (track (find-track pl 1 :by :qnumber)))
+    (rmtrack track pl)
+    (is = 2 (length (playlist-elements pl)))
+    (is string= "Track Two" (title (first (playlist-elements pl))))
+    (is = 1 (qnumber (first (playlist-elements pl)))))
+  ;; Remove last track
+  (let* ((pl (make-ops-test-playlist))
+         (track (find-track pl 3 :by :qnumber)))
+    (rmtrack track pl)
+    (is = 2 (length (playlist-elements pl)))
+    (is string= "Track Two" (title (second (playlist-elements pl))))
+    (is = 2 (qnumber (second (playlist-elements pl)))))
+  ;; rmtrack returns the playlist
+  (let* ((pl (make-ops-test-playlist))
+         (track (first (playlist-elements pl))))
+    (is eq pl (rmtrack track pl))))
+
+(define-test add-playlist-element-tests
+  :parent m3u-operations-tests
+  ;; Append to end with index -1
+  (let* ((pl (make-ops-test-playlist))
+         (new-track (make-track "New Track" "/new.mp3")))
+    (setf (add-playlist-element pl -1) new-track)
+    (is = 4 (length (playlist-elements pl)))
+    (is string= "New Track" (title (fourth (playlist-elements pl))))
+    (is = 4 (qnumber (fourth (playlist-elements pl)))))
+  ;; Prepend to front with index 1
+  (let* ((pl (make-ops-test-playlist))
+         (new-track (make-track "First Track" "/first.mp3")))
+    (setf (add-playlist-element pl 1) new-track)
+    (is = 4 (length (playlist-elements pl)))
+    (is string= "First Track" (title (first (playlist-elements pl))))
+    (is = 1 (qnumber (first (playlist-elements pl))))
+    (is = 2 (qnumber (second (playlist-elements pl)))))
+  ;; Insert in middle at index 2
+  (let* ((pl (make-ops-test-playlist))
+         (new-track (make-track "Middle Track" "/mid.mp3")))
+    (setf (add-playlist-element pl 2) new-track)
+    (is = 4 (length (playlist-elements pl)))
+    (is string= "Middle Track" (title (second (playlist-elements pl))))
+    (is = 2 (qnumber (second (playlist-elements pl))))
+    (is = 3 (qnumber (third  (playlist-elements pl))))))
 
