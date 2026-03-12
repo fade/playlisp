@@ -16,11 +16,21 @@
   "Read a playlist from PLAYLIST-PATH and return an instance of playlist/parser:PLAYLIST"
   (parse-m3u-file playlist-path))
 
+(defun make-playlist (pname phase &key (curator (uiop:getenv "USER"))
+                                    (description "Every one a description requires.") (elements nil))
+  "Create an empty instance of the 'PLAYLIST class."
+  (make-instance 'playlist
+                 :playlist-name pname
+                 :playlist-phase phase
+                 :playlist-curator curator
+                 :playlist-description description
+                 :playlist-elements elements))
+
 
 ;;; playlist element sanitizers
 
 
-;;; add a track to a playlist
+;;; add a track to a playlist, in whatever position.. begin, end, middle.
 
 (defgeneric (setf add-playlist-element) (new-track playlist position)
   (:documentation "Setter for playlist-elements. 
