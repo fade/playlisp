@@ -269,12 +269,14 @@
   "Add the browser ENTRY as a track after the current cursor position."
   (let* ((path (browser-entry-path entry))
          (name (browser-entry-name entry))
+         (duration (get-audio-duration path))
          (pl (app-playlist *app*))
          (tl (current-tracklist))
          (tracks (playlist-elements pl))
          (cursor-idx (if tl (tracklist-panel-cursor tl) 0))
          (insert-idx (min (length tracks) (1+ cursor-idx)))
-         (new-track (make-track (if (string= name "") path name) path)))
+         (new-track (make-track (if (string= name "") path name) path
+                                :runtime (or duration -1))))
     ;; Insert
     (setf (playlist-elements pl)
           (append (subseq tracks 0 insert-idx)
@@ -305,9 +307,11 @@
           (dolist (entry selected)
             (let* ((path (browser-entry-path entry))
                    (name (browser-entry-name entry))
+                   (duration (get-audio-duration path))
                    (pl (app-playlist *app*))
                    (tracks (playlist-elements pl))
-                   (new-track (make-track (if (string= name "") path name) path)))
+                   (new-track (make-track (if (string= name "") path name) path
+                                          :runtime (or duration -1))))
               ;; Append to end
               (setf (playlist-elements pl)
                     (append tracks (list new-track)))
@@ -486,6 +490,10 @@
     (when (and path (> (length path) 0))
       (handler-case
           (progn
+            ;; Auto-calculate total duration before saving
+            (let ((total-secs (calculate-total-duration pl)))
+              (when total-secs
+                (setf (playlist-duration pl) (format-duration-human total-secs))))
             (write-m3u-file pl path)
             (setf (app-filepath *app*) path
                   (app-message *app*)
@@ -493,6 +501,27 @@
         (error (e)
           (setf (app-message *app*)
                 (format nil "Save error: ~A" e)))))))
+
+(defun calculate-total-duration (playlist)
+  "Calculate total duration of all tracks in PLAYLIST. Returns seconds or NIL."
+  (let ((total 0)
+        (has-duration nil))
+    (dolist (track (playlist-elements playlist))
+      (let ((rt (runtime track)))
+        (when (and rt (numberp rt) (> rt 0))
+          (incf total rt)
+          (setf has-duration t))))
+    (when has-duration total)))
+
+(defun format-duration-human (seconds)
+  "Format SECONDS as human-readable duration (e.g., '1 hour 23 minutes')."
+  (let* ((hours (floor seconds 3600))
+         (mins (floor (mod seconds 3600) 60)))
+    (cond
+      ((>= hours 1)
+       (format nil "~D hour~:P ~D minute~:P" hours mins))
+      (t
+       (format nil "~D minute~:P" mins)))))
 
 ;;; ── Edit playlist metadata ────────────────────────────────────────
 
@@ -558,6 +587,52 @@
         (error (e)
           (setf (app-message *app*)
                 (format nil "Open error: ~A" e)))))))
+
+;;; ── Refresh durations ────────────────────────────────────────────
+
+(defun unescape-path (path)
+  "Remove backslash escapes from PATH (e.g., \\[ becomes [)."
+  (with-output-to-string (out)
+    (loop with i = 0
+          while (< i (length path))
+          do (let ((c (char path i)))
+               (if (and (char= c #\\)
+                        (< (1+ i) (length path)))
+                   (progn
+                     (write-char (char path (1+ i)) out)
+                     (incf i 2))
+                   (progn
+                     (write-char c out)
+                     (incf i)))))))
+
+(defun file-exists-p (path)
+  "Check if PATH exists without triggering wildcard interpretation.
+   Uses shell test -f to avoid SBCL treating brackets as wildcards."
+  (handler-case
+      (let ((output (uiop:run-program (list "test" "-f" path)
+                                      :ignore-error-status t)))
+        (declare (ignore output))
+        (zerop (nth-value 2 (uiop:run-program (list "test" "-f" path)
+                                              :ignore-error-status t))))
+    (error () nil)))
+
+(defun refresh-all-durations ()
+  "Re-scan all tracks and update their durations using ffprobe.
+   Handles backslash-escaped paths (e.g., \\[FLAC]) in M3U files."
+  (let ((pl (app-playlist *app*)))
+    (when pl
+      (let ((count 0)
+            (total (length (playlist-elements pl))))
+        (dolist (track (playlist-elements pl))
+          (let* ((raw-path (track-path track))
+                 (path (when raw-path (unescape-path raw-path))))
+            (when (and path (file-exists-p path))
+              (let ((duration (get-audio-duration path)))
+                (when duration
+                  (setf (runtime track) duration)
+                  (incf count))))))
+        (setf (app-message *app*)
+              (format nil "Updated ~D/~D track durations" count total))))))
 
 ;;; ── Render ────────────────────────────────────────────────────────
 
@@ -743,6 +818,9 @@
        (full-render)
        (render-browser)
        (return-from handle-key))
+
+      ;; Refresh track durations
+      ((eql char #\R) (refresh-all-durations))
 
       ;; File operations
       ((eql char #\w) (save-playlist))
