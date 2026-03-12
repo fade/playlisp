@@ -4,13 +4,21 @@
 
 * Overview
 
-playlisp is a Common Lisp library for parsing extended M3U playlist files
-into CLOS objects. It was written for dynamic playlist support in the
-Asteroid Radio project.
+playlisp is a Common Lisp library for parsing, constructing, and editing
+extended M3U playlist files using CLOS objects. It was written for dynamic
+playlist support in the Asteroid Radio project.
 
-The parser is built on [[https://github.com/fade/parsector][parsector]], a monadic parser combinator library, and
-supports arithmetic expressions in =EXTINF= duration fields (e.g.
-=(3*60)+45= for 225 seconds).
+The library has three layers:
+
+- =playlisp/parser= -- parses M3U files and strings into =playlist= and =track=
+  objects. The parser is built on [[https://github.com/fade/parsector][parsector]], a monadic parser combinator
+  library, and supports arithmetic expressions in =EXTINF= duration fields
+  (e.g. =(3*60)+45= for 225 seconds).
+- =playlisp/m3u-operations= -- functions for querying and mutating =playlist=
+  objects: finding tracks, removing tracks, and inserting tracks at arbitrary
+  positions.
+- =playlisp/src/app= -- a full-screen terminal TUI editor for M3U playlists,
+  launched via =playlisp:run-tui=.
 
 * License
 
@@ -20,7 +28,6 @@ GNU Affero General Public License v3
 
 - [[https://github.com/fade/parsector][parsector]] -- parser combinator library
 - [[https://github.com/vseloved/rutils][rutils]]
-- [[https://github.com/sykopomp/taglib][taglib]]
 - [[https://github.com/sharplispers/alexandria][alexandria]]
 - [[https://github.com/Shinmera/parachute][parachute]] -- (test suite only)
 
@@ -32,8 +39,10 @@ Clone the repository and ensure it is visible to ASDF (e.g. via
 #+begin_src lisp
 (push (truename "path/to/playlisp/") asdf:*central-registry*)
 (asdf:load-system :playlisp)
-(asdf:load-system :playlisp/parser)
 #+end_src
+
+Loading =:playlisp= is sufficient; it brings in the parser, operations, and
+TUI layers automatically.
 
 * M3U Format
 
@@ -90,7 +99,7 @@ Represents a parsed M3U playlist.
 
 Constructor: =(make-playlist name &key phase duration curator description elements)=
 
-The =curator= defaults to the value of the =USER= environment variable.
+The =curator= slot defaults to the value of the =USER= environment variable.
 
 ** =track=
 
@@ -111,10 +120,8 @@ Constructor: =(make-track title path &key artist runtime position)=
 ** Parsing a playlist file
 
 #+begin_src lisp
-(asdf:load-system :playlisp/parser)
-
 (defvar *playlist*
-  (playlisp/parser:parse-m3u-file #p"/path/to/playlist.m3u"))
+  (playlisp:parse-m3u-file #p"/path/to/playlist.m3u"))
 
 (playlisp:playlist-name *playlist*)
 ;; => "Underworld & Friends"
@@ -126,11 +133,18 @@ Constructor: =(make-track title path &key artist runtime position)=
 ;; => 45
 #+end_src
 
+File encoding is detected automatically. To parse a specific encoding
+explicitly, pass =:encoding= to the underlying parser:
+
+#+begin_src lisp
+(playlisp/parser:parse-m3u-file #p"/path/to/latin-1.m3u" :encoding :latin-1)
+#+end_src
+
 ** Parsing a string
 
 #+begin_src lisp
 (defvar *playlist*
-  (playlisp/parser:parse-m3u
+  (playlisp:parse-m3u
     (format nil "#EXTM3U~%#PLAYLIST:My Mix~%#EXTINF:225,Artist - Song~%/music/song.mp3~%")))
 
 (playlisp:playlist-name *playlist*)
@@ -157,38 +171,152 @@ Constructor: =(make-track title path &key artist runtime position)=
     :description "Ambient and downtempo selections"
     :elements (list (playlisp:make-track "Boards of Canada - Dayvan Cowboy"
                                          "/music/boc/dayvan-cowboy.flac"
-                                         :runtime 315
-                                         :position 1)
+                                         :runtime 315)
                     (playlisp:make-track "Tycho - A Walk"
                                          "/music/tycho/a-walk.flac"
-                                         :runtime 384
-                                         :position 2))))
+                                         :runtime 384))))
 #+end_src
 
 ** Iterating over tracks
 
 #+begin_src lisp
 (dolist (track (playlisp:playlist-elements *playlist*))
-  (format t "~3D. ~A (~A sec) ~A~%"
+  (format t "~3D. ~A (~A sec)~%"
           (playlisp:qnumber track)
           (playlisp:title track)
-          (playlisp:runtime track)
-          (playlisp:track-path track)))
+          (playlisp:runtime track)))
 #+end_src
+
+** Playlist operations (=playlisp/m3u-operations=)
+
+The =playlisp/m3u-operations= package (nickname =m3uop=) provides functions
+for querying and mutating playlist objects. All operations keep =qnumber=
+slots consistent after modification.
+
+*** Finding a track
+
+=(find-track playlist key &key (by :title))=
+
+Returns the first matching track, or =NIL= if not found. The =by= keyword
+selects the field to search: =:title= and =:artist= use case-insensitive
+string comparison; =:qnumber= uses =eql=.
+
+#+begin_src lisp
+;; Find by title (case-insensitive)
+(m3uop:find-track *playlist* "born slippy" :by :title)
+;; => #<TRACK "Underworld - Born Slippy (Nuxx)">
+
+;; Find by 1-based queue position
+(m3uop:find-track *playlist* 3 :by :qnumber)
+;; => #<TRACK ...> (the third track)
+
+;; Find by artist (only populated when tracks are built with make-track :artist)
+(m3uop:find-track *my-playlist* "Tycho" :by :artist)
+;; => #<TRACK "Tycho - A Walk">
+
+;; Returns NIL when not found
+(m3uop:find-track *playlist* "No Such Track" :by :title)
+;; => NIL
+#+end_src
+
+*** Removing a track
+
+=(rmtrack track playlist)=
+
+Removes =track= from =playlist= by object identity and renumbers the
+remaining tracks. Returns the modified playlist.
+
+#+begin_src lisp
+(let ((track (m3uop:find-track *playlist* "Orbital - Halcyon" :by :title)))
+  (m3uop:rmtrack track *playlist*))
+;; => *playlist* (now without that track, remaining tracks renumbered)
+#+end_src
+
+*** Inserting a track
+
+=((setf add-playlist-element) new-track playlist position)=
+
+Inserts =new-track= into =playlist= at the 1-based =position=. Use =1= to
+prepend, =-1= to append, or any positive integer to insert before the
+track currently at that position. Renumbers all tracks afterwards.
+
+#+begin_src lisp
+(let ((new-track (playlisp:make-track "Underworld - Rez"
+                                      "/music/underworld/rez.flac"
+                                      :runtime 411)))
+  ;; Append to end
+  (setf (m3uop:add-playlist-element *playlist* -1) new-track)
+
+  ;; Prepend to front
+  (setf (m3uop:add-playlist-element *playlist* 1) new-track)
+
+  ;; Insert at position 4 (before whatever is currently fourth)
+  (setf (m3uop:add-playlist-element *playlist* 4) new-track))
+#+end_src
+
+** TUI editor
+
+playlisp includes a full-screen terminal editor for M3U playlists, launched
+with =playlisp:run-tui=.
+
+#+begin_src lisp
+;; Open the TUI with an existing playlist
+(playlisp:run-tui "/path/to/playlist.m3u")
+
+;; Open the TUI with an empty playlist
+(playlisp:run-tui)
+#+end_src
+
+From the command line:
+
+#+begin_src shell
+sbcl --non-interactive \
+  --eval '(push (truename "path/to/playlisp/") asdf:*central-registry*)' \
+  --eval '(asdf:load-system :playlisp)' \
+  --eval '(playlisp:-main (list "/path/to/playlist.m3u"))'
+#+end_src
+
+*** Keybindings
+
+| Key         | Action                          |
+|-------------+---------------------------------|
+| =j= / =↓=     | Move cursor down                |
+| =k= / =↑=     | Move cursor up                  |
+| =g=           | Go to top                       |
+| =G=           | Go to bottom                    |
+| =PgUp=        | Page up                         |
+| =PgDn=        | Page down                       |
+| =Tab=         | Switch between tracklist/details pane |
+| =a=           | Add track after cursor          |
+| =A=           | Add track before cursor         |
+| =K=           | Move selected track up          |
+| =J=           | Move selected track down        |
+| =d= / =Del=   | Delete selected track           |
+| =n=           | New empty playlist              |
+| =b=           | Browse filesystem to add tracks |
+| =o=           | Open an M3U file                |
+| =w=           | Save / write playlist           |
+| =e=           | Edit playlist metadata          |
+| =?=           | Show keybindings help           |
+| =q= / =Esc=   | Quit                            |
 
 * Packages
 
-| Package            | Description                                 |
-|--------------------+---------------------------------------------|
-| =playlisp=         | CLOS class definitions and constructors     |
-| =playlisp/parser=  | M3U parser built on parsector               |
-| =playlisp/tests=   | Test suite (parachute)                      |
+| Package                    | Nickname  | Description                                      |
+|----------------------------+-----------+--------------------------------------------------|
+| =playlisp=                 |           | Top-level: re-exports parser, exports =run-tui=  |
+| =playlisp/parser=          |           | M3U parser; =playlist= and =track= classes       |
+| =playlisp/m3u-operations=  | =m3uop=   | Playlist mutation: find, remove, insert tracks   |
+| =playlisp/src/app=         |           | TUI editor entry point                           |
+| =playlisp/tests=           |           | Test suite (parachute)                           |
 
 * Running Tests
 
 #+begin_src lisp
-(asdf:test-system :playlisp/tests)
+(asdf:test-system :playlisp)
 #+end_src
+
+This runs the full test suite, covering the parser and =playlisp/m3u-operations=.
 
 Or from the command line:
 
@@ -196,5 +324,5 @@ Or from the command line:
 sbcl --non-interactive \
   --eval '(push (truename "path/to/playlisp/") asdf:*central-registry*)' \
   --eval '(push (truename "path/to/parsector/") asdf:*central-registry*)' \
-  --eval '(asdf:test-system :playlisp/tests)'
+  --eval '(asdf:test-system :playlisp)'
 #+end_src
