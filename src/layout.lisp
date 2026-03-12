@@ -65,7 +65,7 @@
 
 ;;; ── Status bar rendering ──────────────────────────────────────────
 
-(defun render-status-bar (layout &key mode filename track-count)
+(defun render-status-bar (layout &key mode filename track-count total-duration)
   "Render the bottom status bar."
   (let ((y (layout-status-y layout))
         (w (layout-width layout)))
@@ -79,12 +79,13 @@
       (reset)
       (bg :status)
       (fg :white))
-    ;; Center: file info
-    (let ((info (format nil "~@[~A~]~@[ · ~D tracks~]"
-                        filename track-count)))
+    ;; Center: file info with duration
+    (let ((info (format nil "~@[~A~]~@[ · ~D tracks~]~@[ · ~A~]"
+                        filename track-count
+                        (when total-duration (format-runtime total-duration)))))
       (princ info *terminal-io*))
     ;; Pad to end
-    (let* ((used (+ 10 (length (or filename "")) 15))
+    (let* ((used (+ 10 (length (or filename "")) 25))
            (pad (max 0 (- w used))))
       (princ (make-string pad :initial-element #\Space) *terminal-io*))
     ;; Right: help hint
@@ -94,7 +95,7 @@
 
 ;;; ── Full render ───────────────────────────────────────────────────
 
-(defun layout-render-all (layout &key mode filename track-count)
+(defun layout-render-all (layout &key mode filename track-count total-duration)
   "Render all panels and the status bar."
   (begin-sync-update)
   (cursor-to 1 1)  ; Ensure we start at top-left
@@ -105,6 +106,7 @@
   (render-status-bar layout
                      :mode mode
                      :filename filename
-                     :track-count track-count)
+                     :track-count track-count
+                     :total-duration total-duration)
   (end-sync-update)
   (force-output *terminal-io*))

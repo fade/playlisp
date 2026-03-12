@@ -37,7 +37,8 @@
            #:browser-recursive-p
            #:*audio-extensions*
            #:*music-library-path*
-           #:truncate-string))
+           #:truncate-string
+           #:format-runtime))
 
 (in-package #:playlisp/src/widgets)
 
@@ -270,8 +271,8 @@
   "Audio file extensions shown in the file browser.")
 
 (defparameter *music-library-path*
-  #p"/home/glenn/SourceCode/asteroid/music/library/"
-  "Default path for the music library browser.")
+  nil
+  "Default path for the music library browser. Set via configuration or command line.")
 
 (defstruct browser-entry
   "An entry in the file browser listing."
