@@ -73,7 +73,7 @@
       (1/2 tracklist)
       (1/4 details)
       (1/4 interactor))))
-  (:top-level (default-frame-top-level :prompt 'print-prompt))
+  (:top-level (clim-charmed:charmed-frame-top-level))
   (:command-table (playlisp-editor
                    :inherit-from ())))
 
