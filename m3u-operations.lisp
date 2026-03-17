@@ -7,7 +7,9 @@
   (:export
    #:add-playlist-element
    #:find-track
-   #:rmtrack))
+   #:rmtrack
+   #:get-audio-duration
+   #:make-track-from-file))
 
 (in-package :playlisp/m3u-operations)
 
@@ -58,6 +60,28 @@ Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
 qnumber relative to its position in the list."
   (setf (playlist-elements playlist)
         (resmoother (playlist-elements playlist))))
+
+;;; ── Audio file metadata ───────────────────────────────────────────
+
+(defun get-audio-duration (filepath)
+  "Get duration in seconds from an audio file using ffprobe. Returns NIL on error."
+  (handler-case
+      (let* ((cmd (format nil "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ~S"
+                          (namestring filepath)))
+             (output (string-trim '(#\Space #\Newline #\Return)
+                                  (uiop:run-program cmd :output :string :ignore-error-status t))))
+        (when (and output (> (length output) 0))
+          (let ((duration (ignore-errors (parse-number:parse-number output))))
+            (when (and duration (numberp duration))
+              (round duration)))))
+    (error () nil)))
+
+(defun make-track-from-file (filepath &key title)
+  "Create a track from an audio file, reading duration via ffprobe.
+   If TITLE is not provided, uses the filename."
+  (let ((duration (get-audio-duration filepath))
+        (name (or title (file-namestring filepath))))
+    (make-track name filepath :runtime (or duration -1))))
 
 ;;; find a track within a playlist
 

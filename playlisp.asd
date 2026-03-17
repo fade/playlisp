@@ -10,6 +10,7 @@
   :version "0.1.0"
   :depends-on (#:parsector
                #:rutils
+               #:parse-number
                #:alexandria
                ;; #:playlisp/parser
                #:playlisp/m3u-operations
