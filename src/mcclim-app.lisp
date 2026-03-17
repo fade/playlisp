@@ -25,7 +25,9 @@
                 #:move-track-down
                 #:delete-track
                 #:add-track
-                #:write-m3u-file)
+                #:write-m3u-file
+                #:get-audio-duration
+                #:make-track-from-file)
   (:export #:run
            #:*default-music-path*))
 
@@ -340,13 +342,13 @@
     (object)
   (list object))
 
-;; Add track from file
+;; Add track from file (uses ffprobe for duration)
 (define-playlisp-editor-command (com-add-track :name "Add" :keystroke (#\a))
     ((path 'pathname :prompt "Audio file"))
   (let* ((frame *application-frame*)
          (playlist (frame-playlist frame)))
     (when playlist
-      (let ((track (make-track (pathname-name path) (namestring path))))
+      (let ((track (make-track-from-file (namestring path))))
         (add-track playlist track (1+ (frame-selected-index frame)))
         (incf (frame-selected-index frame))
         (setf (frame-message frame) 
@@ -389,6 +391,19 @@
     (object)
   (list object))
 
+;; Refresh duration for selected track using ffprobe
+(define-playlisp-editor-command (com-refresh-duration :name "Refresh Duration" :keystroke (#\R))
+    ()
+  (let* ((frame *application-frame*)
+         (track (frame-selected-track frame)))
+    (when track
+      (let ((duration (get-audio-duration (track-path track))))
+        (when duration
+          (setf (runtime track) duration)
+          (setf (frame-message frame) 
+                (format nil "Duration: ~A" (format-duration duration)))
+          (redisplay-frame-panes frame))))))
+
 ;; Help
 (define-playlisp-editor-command (com-help :name "Help" :keystroke (#\?))
     ()
@@ -402,6 +417,7 @@
     (format stream "  d       - Delete selected track~%")
     (format stream "  a       - Add track (prompts for file)~%")
     (format stream "  b       - Browse directory~%")
+    (format stream "  R       - Refresh duration (ffprobe)~%")
     (format stream "  n       - New playlist~%")
     (format stream "  w       - Save playlist~%")
     (format stream "  ?       - Show this help~%")

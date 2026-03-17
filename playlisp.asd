@@ -32,3 +32,15 @@
   :components ((:file "tests"))
   :perform (asdf:test-op (op c)
                          (uiop:symbol-call :parachute :test :playlisp/tests)))
+
+;;; McCLIM-based TUI (requires charmed-mcclim backend)
+(asdf:defsystem #:playlisp/mcclim
+  :description "McCLIM TUI for playlisp using charmed-mcclim backend"
+  :author "Glenn Thompson"
+  :license "GNU AFFERO GENERAL PUBLIC LICENSE V.3"
+  :version "0.1.0"
+  :depends-on (#:playlisp/parser
+               #:playlisp/m3u-operations
+               #:mcclim-charmed)
+  :components ((:module "src"
+                :components ((:file "mcclim-app")))))
