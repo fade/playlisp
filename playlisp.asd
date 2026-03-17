@@ -39,7 +39,8 @@
   :author "Glenn Thompson"
   :license "GNU AFFERO GENERAL PUBLIC LICENSE V.3"
   :version "0.1.0"
-  :depends-on (#:playlisp/parser
+  :depends-on (#:parse-number
+               #:playlisp/parser
                #:playlisp/m3u-operations
                #:mcclim-charmed)
   :components ((:module "src"
