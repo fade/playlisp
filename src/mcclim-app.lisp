@@ -295,8 +295,23 @@
   (let* ((stream (get-frame-pane frame 'interactor))
          (dir (frame-browser-dir frame))
          (entries (frame-browser-entries frame))
-         (cursor (frame-browser-cursor frame)))
+         (cursor (frame-browser-cursor frame))
+         (fm (frame-manager frame))
+         (port (when fm (port fm))))
     (when (and stream dir)
+      ;; Clear the interactor's area on the charmed screen buffer
+      ;; and reset scroll offset so content draws from the top
+      (when (and port (typep port 'clim-charmed::charmed-port))
+        (let ((screen (clim-charmed::charmed-port-screen port))
+              (vp (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
+          (when (and screen vp)
+            (charmed:screen-fill-rect screen
+                                      (round (first vp))
+                                      (round (second vp))
+                                      (round (third vp))
+                                      (round (fourth vp)))))
+        ;; Reset scroll offset to 0 so text draws from the top of the viewport
+        (setf (clim-charmed::pane-scroll-offset port stream) 0))
       (window-clear stream)
       ;; Header
       (with-text-face (stream :bold)
@@ -339,7 +354,16 @@
           (when (> nsel 0)
             (with-drawing-options (stream :ink +yellow+)
               (format stream "  (~D selected)" nsel)))))
-      (force-output stream))))
+      (force-output stream)
+      ;; Force charmed port to present the screen.
+      ;; We cannot use redisplay-frame-panes here because it calls
+      ;; reset-stream-cursor on the interactor, clobbering our output.
+      ;; Instead, directly call port-force-output which draws borders,
+      ;; positions cursor, and calls screen-present.
+      (let* ((fm (frame-manager frame))
+             (port (when fm (port fm))))
+        (when (and port (typep port 'clim-charmed::charmed-port))
+          (climi::port-force-output port))))))
 
 (defun browser-current-entry (frame)
   "Return the browser-entry under the cursor, or NIL."
