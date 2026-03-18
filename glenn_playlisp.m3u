@@ -1,9 +1,15 @@
 #EXTM3U
 #PLAYLIST:playlisp_test
 #PHASE:playlisp_test
-#DURATION:1 hour 26 minutes
+#DURATION:1 hour 37 minutes
 #CURATOR:glenneth
 #DESCRIPTION:A test of the playlisp creation tool
+#EXTINF:343,Clark - Death Peak (2017) [FLAC]/03 - Peak Magnetic.flac
+/home/glenn/SourceCode/asteroid/music/library/Clark - Death Peak (2017) [FLAC]/03 - Peak Magnetic.flac
+#EXTINF:123,Clark - Death Peak (2017) [FLAC]/06 - Aftermath.flac
+/home/glenn/SourceCode/asteroid/music/library/Clark - Death Peak (2017) [FLAC]/06 - Aftermath.flac
+#EXTINF:248,Clark - Death Peak (2017) [FLAC]/08 - Living Fantasy.flac
+/home/glenn/SourceCode/asteroid/music/library/Clark - Death Peak (2017) [FLAC]/08 - Living Fantasy.flac
 #EXTINF:532,2005 - Alva Noto, Ryuichi Sakamoto - Insen/Insen-01-001-Alva Noto, Ryuichi Sakamoto-Aurora.flac
 /home/glenn/SourceCode/asteroid/music/library/2005 - Alva Noto, Ryuichi Sakamoto - Insen/Insen-01-001-Alva Noto, Ryuichi Sakamoto-Aurora.flac
 #EXTINF:184,2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1984 Hyaena/03 Take Me Back.flac
@@ -14,8 +20,8 @@
 /home/glenn/SourceCode/asteroid/music/library/Alabama 3 - 2011 - Shoplifting 4 Jesus \[flac]/10 - Black Dog.flac
 #EXTINF:270,Alabama 3 - 2011 - Shoplifting 4 Jesus \[flac]/12 - Who the Fuck is John Sinclair.flac
 /home/glenn/SourceCode/asteroid/music/library/Alabama 3 - 2011 - Shoplifting 4 Jesus \[flac]/12 - Who the Fuck is John Sinclair.flac
-#EXTINF:-1,Alva Noto/2020 - Xerrox Vol. 4/04 - Xerrox PlongÃƒÆ’Ã‚Â©e.flac
-/home/glenn/SourceCode/asteroid/music/library/Alva Noto/2020 - Xerrox Vol. 4/04 - Xerrox PlongÃƒÆ’Ã‚Â©e.flac
+#EXTINF:-1,Alva Noto/2020 - Xerrox Vol. 4/04 - Xerrox PlongÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e.flac
+/home/glenn/SourceCode/asteroid/music/library/Alva Noto/2020 - Xerrox Vol. 4/04 - Xerrox PlongÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e.flac
 #EXTINF:232,Alva Noto/2020 - Xerrox Vol. 4/05 - Xerrox Cosmos.flac
 /home/glenn/SourceCode/asteroid/music/library/Alva Noto/2020 - Xerrox Vol. 4/05 - Xerrox Cosmos.flac
 #EXTINF:235,Alva Noto/2023 - This Stolen Country of Mine (Original Motion Picture Soundtrack)/17. Trail.flac

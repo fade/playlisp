@@ -11,6 +11,10 @@
   (:import-from #:playlisp/parser
                 #:playlist
                 #:playlist-name
+                #:playlist-phase
+                #:playlist-duration
+                #:playlist-curator
+                #:playlist-description
                 #:playlist-elements
                 #:track
                 #:track-path
@@ -24,7 +28,7 @@
                 #:move-track-up
                 #:move-track-down
                 #:delete-track
-                #:add-track
+                #:add-playlist-element
                 #:write-m3u-file
                 #:get-audio-duration
                 #:make-track-from-file)
@@ -57,41 +61,77 @@
   (let ((ext (pathname-type path)))
     (and ext (member ext *audio-extensions* :test #'string-equal))))
 
+(defun dir-string-to-directory-list (dir-string)
+  "Split DIR-STRING on / into a pathname directory component list.
+   This avoids parse-namestring which interprets [] as wildcards."
+  (let* ((trimmed (string-right-trim "/" dir-string))
+         (parts (uiop:split-string trimmed :separator "/"))
+         (dirs (remove-if (lambda (s) (zerop (length s))) parts)))
+    (cons :absolute dirs)))
+
+(defun list-subdirectories (dir-string)
+  "List subdirectories of DIR-STRING, handling special characters like [] in paths."
+  (handler-case
+      (let ((wild (make-pathname
+                   :directory (append (dir-string-to-directory-list dir-string)
+                                     (list :wild))
+                   :name nil :type nil)))
+        (sort (remove-if-not
+               (lambda (p) (uiop:directory-pathname-p p))
+               (directory wild))
+              #'string< :key #'namestring))
+    (error () nil)))
+
+(defun list-directory-files (dir-string)
+  "List files in DIR-STRING, handling special characters like [] in paths."
+  (handler-case
+      (let ((wild (make-pathname
+                   :directory (dir-string-to-directory-list dir-string)
+                   :name :wild :type :wild)))
+        (sort (remove-if
+               (lambda (p) (uiop:directory-pathname-p p))
+               (directory wild))
+              #'string< :key #'namestring))
+    (error () nil)))
+
 (defun browser-refresh-entries (dir)
-  "Scan DIR and return a list of browser-entry structs (dirs + audio files)."
-  (let ((entries nil))
+  "Scan DIR and return a list of browser-entry structs (dirs + audio files).
+   DIR may be a pathname or a string. Paths are built as strings to preserve
+   symlink paths and avoid wildcard interpretation of brackets."
+  (let* ((entries nil)
+         (dir-str (if (stringp dir) dir (namestring dir)))
+         ;; Ensure trailing slash
+         (dir-str (if (eql (char dir-str (1- (length dir-str))) #\/)
+                      dir-str
+                      (concatenate 'string dir-str "/"))))
     ;; Parent directory
-    (let ((parent (uiop:pathname-parent-directory-pathname dir)))
-      (when (and parent (not (equal parent dir)))
-        (push (make-browser-entry :name "../"
-                                  :path (namestring parent)
-                                  :dir-p t)
-              entries)))
+    (let* ((trimmed (string-right-trim "/" (subseq dir-str 0 (1- (length dir-str)))))
+           (slash-pos (position #\/ trimmed :from-end t)))
+      (when slash-pos
+        (let ((parent (subseq dir-str 0 (1+ slash-pos))))
+          (push (make-browser-entry :name "../"
+                                    :path parent
+                                    :dir-p t)
+                entries))))
     ;; Subdirectories (sorted)
-    (handler-case
-        (let ((subdirs (sort (uiop:subdirectories dir)
-                             #'string< :key #'namestring)))
-          (dolist (sub subdirs)
-            (let ((name (first (last (pathname-directory sub)))))
-              (when (and name (stringp name))
-                (push (make-browser-entry
-                       :name (concatenate 'string name "/")
-                       :path (namestring sub)
-                       :dir-p t)
-                      entries)))))
-      (error () nil))
+    (let ((subdirs (list-subdirectories dir-str)))
+      (dolist (sub subdirs)
+        (let ((name (first (last (pathname-directory sub)))))
+          (when (and name (stringp name))
+            (push (make-browser-entry
+                   :name (concatenate 'string name "/")
+                   :path (concatenate 'string dir-str name "/")
+                   :dir-p t)
+                  entries)))))
     ;; Audio files (sorted)
-    (handler-case
-        (let ((files (sort (uiop:directory-files dir)
-                           #'string< :key #'namestring)))
-          (dolist (f files)
-            (when (audio-file-p f)
-              (push (make-browser-entry
-                     :name (file-namestring f)
-                     :path (namestring f)
-                     :dir-p nil)
-                    entries))))
-      (error () nil))
+    (let ((files (list-directory-files dir-str)))
+      (dolist (f files)
+        (when (audio-file-p f)
+          (push (make-browser-entry
+                 :name (file-namestring f)
+                 :path (concatenate 'string dir-str (file-namestring f))
+                 :dir-p nil)
+                entries))))
     (nreverse entries)))
 
 ;;; ── Presentation Types ───────────────────────────────────────────────
@@ -108,6 +148,7 @@
    (selected-index :initform 0 :accessor frame-selected-index)
    (message :initform nil :accessor frame-message)
    ;; Browser state
+   (browser-root :initform nil :accessor frame-browser-root)
    (browser-dir :initform nil :accessor frame-browser-dir)
    (browser-entries :initform nil :accessor frame-browser-entries)
    (browser-cursor :initform 0 :accessor frame-browser-cursor)
@@ -172,6 +213,31 @@
             (format nil "~D:~2,'0D:~2,'0D" h m sec)
             (format nil "~D:~2,'0D" m sec)))))
 
+(defun format-human-duration (seconds)
+  "Format total SECONDS as a human-readable string like '1 hour 26 minutes'."
+  (if (or (null seconds) (<= seconds 0))
+      nil
+      (let* ((s (round seconds))
+             (h (floor s 3600))
+             (m (floor (mod s 3600) 60)))
+        (cond
+          ((and (> h 0) (> m 0))
+           (format nil "~D hour~:P ~D minute~:P" h m))
+          ((> h 0)
+           (format nil "~D hour~:P" h))
+          ((> m 0)
+           (format nil "~D minute~:P" m))
+          (t (format nil "~D seconds" s))))))
+
+(defun compute-playlist-duration (playlist)
+  "Sum all track runtimes in PLAYLIST and update its duration field."
+  (let* ((tracks (playlist-elements playlist))
+         (total (loop for track in tracks
+                      when (and (runtime track) (plusp (runtime track)))
+                      sum (runtime track))))
+    (when (plusp total)
+      (setf (playlist-duration playlist) (format-human-duration total)))))
+
 (defun truncate-string (str max-len)
   "Truncate STR to MAX-LEN, adding ellipsis if needed."
   (if (or (null str) (<= (length str) max-len))
@@ -180,12 +246,22 @@
 
 ;;; ── Display Functions ────────────────────────────────────────────────
 
+(defun get-pane-columns (frame pane)
+  "Return the number of columns available in PANE, or a default."
+  (let* ((fm (frame-manager frame))
+         (port (when fm (port fm))))
+    (if (and port (typep port 'clim-charmed::charmed-port))
+        (let ((vp (gethash pane (clim-charmed::charmed-port-viewport-sizes port))))
+          (if vp (max 40 (round (third vp))) 80))
+        80)))
+
 (defun display-tracklist (frame pane)
   "Display the playlist tracks with the selected one highlighted."
   (let* ((playlist (frame-playlist frame))
          (tracks (frame-tracks frame))
          (selected (frame-selected-index frame))
-         (name (if playlist (playlist-name playlist) "No Playlist")))
+         (name (if playlist (playlist-name playlist) "No Playlist"))
+         (cols (get-pane-columns frame pane)))
     ;; Header
     (with-text-face (pane :bold)
       (with-drawing-options (pane :ink +white+)
@@ -204,7 +280,7 @@
         (format pane "~A" (frame-message frame)))
       (setf (frame-message frame) nil))
     (terpri pane)
-    (format pane "─────────────────────────────────────────────────────────────~%")
+    (format pane "~A~%" (make-string (min cols 80) :initial-element #\─))
     ;; Track list
     (if (null tracks)
         (progn
@@ -215,17 +291,21 @@
         (loop for track in tracks
               for i from 0
               for is-selected = (= i selected)
-              do (display-track-line pane track i is-selected)))))
+              do (display-track-line pane track i is-selected cols)))))
 
-(defun display-track-line (pane track index selected-p)
+(defun display-track-line (pane track index selected-p &optional (cols 80))
   "Display a single track line, clickable."
-  (let* ((the-title (or (title track) 
+  ;; Reserve space: 3 (indicator) + 4 (num) + 10 (duration+brackets) = ~17 overhead
+  (let* ((title-width (max 20 (- cols 17)))
+         (the-title (or (title track) 
                         (file-namestring (track-path track))
                         "Unknown"))
          (the-artist (or (artist track) ""))
          (the-duration (format-duration (runtime track)))
-         (display-title (truncate-string the-title 40))
-         (display-artist (truncate-string the-artist 20)))
+         (duration-str (format nil "  [~A]" the-duration))
+         ;; Compute how much space title+artist can use
+         (avail-for-text (max 20 (- cols 7 (length duration-str))))
+         (display-title (truncate-string the-title avail-for-text)))
     ;; Selection indicator
     (if selected-p
         (with-drawing-options (pane :ink +cyan+)
@@ -238,18 +318,20 @@
     (with-output-as-presentation (pane index 'track-index :single-box t)
       (if selected-p
           (with-text-face (pane :bold)
-            (with-drawing-options (pane :ink +white+)
+            (with-drawing-options (pane :ink +white+
+                                       :text-style (make-text-style nil nil nil))
               (format pane "~A" display-title)))
           (with-drawing-options (pane :ink +white+)
             (format pane "~A" display-title))))
-    ;; Artist
-    (when (plusp (length the-artist))
-      (with-drawing-options (pane :ink +gray50+)
-        (format pane " - ~A" display-artist)))
-    ;; Duration (right-aligned conceptually)
+    ;; Duration
     (with-drawing-options (pane :ink +gray50+)
-      (format pane "  [~A]" the-duration))
-    (terpri pane)))
+      (format pane "~A" duration-str))
+    (terpri pane)
+    ;; Underline for selected track
+    (when selected-p
+      (with-drawing-options (pane :ink +cyan+)
+        (format pane "~A~%" (make-string (min cols 80) :initial-element #\─))))))
+
 
 (defun display-details (frame pane)
   "Display details of the currently selected track."
@@ -278,8 +360,12 @@
 
 (defun enter-browse-mode (frame dir)
   "Switch to browse mode showing DIR."
-  (let ((resolved (handler-case (truename dir) (error () dir))))
-    (setf (frame-browser-dir frame) resolved
+  (let* ((resolved (namestring (merge-pathnames dir)))
+         (resolved (if (eql (char resolved (1- (length resolved))) #\/)
+                       resolved
+                       (concatenate 'string resolved "/"))))
+    (setf (frame-browser-root frame) resolved
+          (frame-browser-dir frame) resolved
           (frame-browser-entries frame) (browser-refresh-entries resolved)
           (frame-browser-cursor frame) 0
           (frame-browser-scroll frame) 0
@@ -287,8 +373,26 @@
     (render-browser-to-interactor frame)))
 
 (defun exit-browse-mode (frame)
-  "Return to normal command mode."
-  (setf (frame-browse-mode-p frame) nil))
+  "Return to normal command mode, clearing browser display."
+  (setf (frame-browse-mode-p frame) nil)
+  ;; Clear the interactor's charmed screen area and output history
+  (let* ((stream (get-frame-pane frame 'interactor))
+         (fm (frame-manager frame))
+         (port (when fm (port fm))))
+    (when (and stream port (typep port 'clim-charmed::charmed-port))
+      (let ((screen (clim-charmed::charmed-port-screen port))
+            (vp (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
+        (when (and screen vp)
+          (charmed:screen-fill-rect screen
+                                    (round (first vp))
+                                    (round (second vp))
+                                    (round (third vp))
+                                    (round (fourth vp)))))
+      (setf (clim-charmed::pane-scroll-offset port stream) 0))
+    (when stream
+      (window-clear stream)))
+  ;; Redisplay all panes to restore normal UI
+  (redisplay-frame-panes frame))
 
 (defun render-browser-to-interactor (frame)
   "Write the browser listing to the interactor pane."
@@ -320,30 +424,52 @@
       (with-drawing-options (stream :ink +gray50+)
         (format stream "──────────────────────────────────────────────────~%"))
       (with-drawing-options (stream :ink +gray50+)
-        (format stream " Up/Down:nav  Enter:open  Space:add  Bksp:up  Esc:close~%"))
-      ;; Entries
-      (if (null entries)
-          (with-drawing-options (stream :ink +gray50+)
-            (format stream "  (empty directory)~%"))
-          (loop for i from 0
-                for entry in entries
-                do (let ((is-cursor (= i cursor))
-                         (name (browser-entry-name entry))
-                         (is-dir (browser-entry-dir-p entry))
-                         (is-selected (browser-entry-selected-p entry)))
-                     (if is-cursor
-                         (with-drawing-options (stream :ink +cyan+)
-                           (format stream " > "))
-                         (format stream "   "))
-                     (if is-selected
-                         (with-drawing-options (stream :ink +yellow+)
-                           (format stream "* "))
-                         (format stream "  "))
-                     (if is-dir
-                         (with-drawing-options (stream :ink +cyan+)
-                           (format stream "~A~%" name))
-                         (with-drawing-options (stream :ink +green+)
-                           (format stream "~A~%" name))))))
+        (format stream " Up/Dn:nav Enter:open Space:star a:add Bksp:up Esc:close~%"))
+      ;; Entries — show a scrolling window that keeps the cursor visible.
+      ;; 3 header lines + 2 summary lines = 5 overhead lines.
+      (let* ((vp (when (and port (typep port 'clim-charmed::charmed-port))
+                   (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
+             (viewport-lines (if vp (max 1 (- (round (fourth vp)) 5)) 20))
+             (n (length entries))
+             (scroll (frame-browser-scroll frame))
+             ;; Adjust scroll to keep cursor visible
+             (scroll (cond ((< cursor scroll) cursor)
+                           ((>= cursor (+ scroll viewport-lines))
+                            (- cursor viewport-lines -1))
+                           (t scroll)))
+             (end (min n (+ scroll viewport-lines))))
+        (setf (frame-browser-scroll frame) scroll)
+        (if (null entries)
+            (with-drawing-options (stream :ink +gray50+)
+              (format stream "  (empty directory)~%"))
+            (progn
+              ;; Show scroll-up indicator
+              (when (> scroll 0)
+                (with-drawing-options (stream :ink +gray50+)
+                  (format stream "   ... ~D more above ...~%" scroll)))
+              (loop for i from scroll below end
+                    for entry = (nth i entries)
+                    do (let ((is-cursor (= i cursor))
+                             (name (browser-entry-name entry))
+                             (is-dir (browser-entry-dir-p entry))
+                             (is-selected (browser-entry-selected-p entry)))
+                         (if is-cursor
+                             (with-drawing-options (stream :ink +cyan+)
+                               (format stream " > "))
+                             (format stream "   "))
+                         (if is-selected
+                             (with-drawing-options (stream :ink +yellow+)
+                               (format stream "* "))
+                             (format stream "  "))
+                         (if is-dir
+                             (with-drawing-options (stream :ink +cyan+)
+                               (format stream "~A~%" name))
+                             (with-drawing-options (stream :ink +green+)
+                               (format stream "~A~%" name)))))
+              ;; Show scroll-down indicator
+              (when (< end n)
+                (with-drawing-options (stream :ink +gray50+)
+                  (format stream "   ... ~D more below ...~%" (- n end)))))))
       ;; Summary
       (let ((ndirs (count-if #'browser-entry-dir-p entries))
             (nfiles (count-if-not #'browser-entry-dir-p entries))
@@ -443,6 +569,85 @@
       (redisplay-frame-panes frame))))
 
 ;; File operations
+
+(defun prompt-playlist-metadata (frame playlist)
+  "Prompt user for playlist metadata fields via the interactor pane.
+   Only updates fields where the user provides non-empty input."
+  (let ((stream (get-frame-pane frame 'interactor)))
+    (when stream
+      ;; Playlist name
+      (let ((current (or (playlist-name playlist) "Untitled")))
+        (format stream "~&Playlist name [~A]: " current)
+        (finish-output stream)
+        (let ((input (accept 'string :stream stream :prompt "" :default current)))
+          (when (and input (plusp (length input)))
+            (setf (playlist-name playlist) input))))
+      ;; Phase
+      (let ((current (or (playlist-phase playlist) "")))
+        (format stream "~&Phase [~A]: " current)
+        (finish-output stream)
+        (let ((input (accept 'string :stream stream :prompt "" :default current)))
+          (when (and input (plusp (length input)))
+            (setf (playlist-phase playlist) input))))
+      ;; Curator
+      (let ((current (or (playlist-curator playlist)
+                         (uiop:getenv "USER") "")))
+        (format stream "~&Curator [~A]: " current)
+        (finish-output stream)
+        (let ((input (accept 'string :stream stream :prompt "" :default current)))
+          (when (and input (plusp (length input)))
+            (setf (playlist-curator playlist) input))))
+      ;; Description
+      (let ((current (or (playlist-description playlist) "")))
+        (format stream "~&Description [~A]: " current)
+        (finish-output stream)
+        (let ((input (accept 'string :stream stream :prompt "" :default current)))
+          (when (and input (plusp (length input)))
+            (setf (playlist-description playlist) input)))))))
+
+(defun normalize-save-path (path &optional existing-filepath)
+  "Normalize PATH for saving: expand ~, ensure .m3u extension, default directory."
+  (let* ((expanded (if (and (plusp (length path))
+                            (char= (char path 0) #\~))
+                       (concatenate 'string (namestring (user-homedir-pathname))
+                                    (subseq path (if (and (> (length path) 1)
+                                                          (char= (char path 1) #\/))
+                                                     2 1)))
+                       path))
+         ;; If no directory separator, place in same dir as existing file or cwd
+         (with-dir (if (position #\/ expanded)
+                       expanded
+                       (let ((dir (if existing-filepath
+                                      (directory-namestring
+                                       (pathname existing-filepath))
+                                      (namestring (uiop:getcwd)))))
+                         (concatenate 'string dir expanded))))
+         ;; Ensure .m3u extension
+         (with-ext (if (or (uiop:string-suffix-p with-dir ".m3u")
+                           (uiop:string-suffix-p with-dir ".m3u8")
+                           (uiop:string-suffix-p with-dir ".M3U"))
+                       with-dir
+                       (concatenate 'string with-dir ".m3u"))))
+    with-ext))
+
+(defun do-save-playlist (frame filepath)
+  "Save the current playlist to FILEPATH, updating duration automatically."
+  (let* ((playlist (frame-playlist frame))
+         (filepath (normalize-save-path filepath (frame-filepath frame))))
+    (when playlist
+      ;; Auto-compute duration from track runtimes
+      (compute-playlist-duration playlist)
+      (handler-case
+          (progn
+            (write-m3u-file playlist filepath)
+            (setf (frame-filepath frame) filepath
+                  (frame-message frame) 
+                  (format nil "Saved to ~A" filepath)))
+        (error (e)
+          (setf (frame-message frame) 
+                (format nil "Save error: ~A" e))))
+      (redisplay-frame-panes frame))))
+
 (define-playlisp-editor-command (com-save :name "Save" :keystroke (#\s :control))
     ()
   (let* ((frame *application-frame*)
@@ -450,19 +655,50 @@
          (filepath (frame-filepath frame)))
     (cond
       ((null playlist)
-       (setf (frame-message frame) "No playlist to save"))
+       (setf (frame-message frame) "No playlist to save")
+       (redisplay-frame-panes frame))
       ((null filepath)
-       (setf (frame-message frame) "No file path - use Save As"))
+       ;; New playlist - prompt for metadata and filepath
+       (let ((stream (get-frame-pane frame 'interactor)))
+         (prompt-playlist-metadata frame playlist)
+         (format stream "~&Save as: ")
+         (finish-output stream)
+         (let ((path (accept 'string :stream stream :prompt "")))
+           (when (and path (plusp (length path)))
+             (do-save-playlist frame path)))))
       (t
-       (handler-case
-           (progn
-             (write-m3u-file playlist filepath)
-             (setf (frame-message frame) 
-                   (format nil "Saved to ~A" (file-namestring filepath))))
-         (error (e)
-           (setf (frame-message frame) 
-                 (format nil "Save error: ~A" e))))))
-    (redisplay-frame-panes frame)))
+       ;; Existing filepath - just save
+       (do-save-playlist frame filepath)))))
+
+(define-playlisp-editor-command (com-save-as :name "Save As")
+    ()
+  (let* ((frame *application-frame*)
+         (playlist (frame-playlist frame)))
+    (cond
+      ((null playlist)
+       (setf (frame-message frame) "No playlist to save")
+       (redisplay-frame-panes frame))
+      (t
+       (let ((stream (get-frame-pane frame 'interactor)))
+         (prompt-playlist-metadata frame playlist)
+         (format stream "~&Save as: ")
+         (finish-output stream)
+         (let ((path (accept 'string :stream stream :prompt "")))
+           (when (and path (plusp (length path)))
+             (do-save-playlist frame path))))))))
+
+(define-playlisp-editor-command (com-write :name "Write")
+    ()
+  (com-save))
+
+(define-playlisp-editor-command (com-edit-metadata :name "Metadata")
+    ()
+  (let* ((frame *application-frame*)
+         (playlist (frame-playlist frame)))
+    (when playlist
+      (prompt-playlist-metadata frame playlist)
+      (setf (frame-message frame) "Metadata updated")
+      (redisplay-frame-panes frame))))
 
 (define-playlisp-editor-command (com-open :name "Open")
     ((path 'pathname :prompt "M3U file"))
@@ -510,7 +746,7 @@
          (playlist (frame-playlist frame)))
     (when playlist
       (let ((track (make-track-from-file (namestring path))))
-        (add-track playlist track (1+ (frame-selected-index frame)))
+        (setf (add-playlist-element playlist (1+ (frame-selected-index frame))) track)
         (incf (frame-selected-index frame))
         (setf (frame-message frame) 
               (format nil "Added: ~A" (file-namestring path)))
@@ -547,8 +783,8 @@
          (entry (browser-current-entry frame)))
     (when (and (frame-browse-mode-p frame) entry)
       (if (browser-entry-dir-p entry)
-          ;; Navigate into directory
-          (let ((new-dir (pathname (browser-entry-path entry))))
+          ;; Navigate into directory (keep path as string to avoid bracket issues)
+          (let ((new-dir (browser-entry-path entry)))
             (setf (frame-browser-dir frame) new-dir
                   (frame-browser-entries frame) (browser-refresh-entries new-dir)
                   (frame-browser-cursor frame) 0
@@ -556,10 +792,12 @@
           ;; Add audio file to playlist
           (let* ((path (browser-entry-path entry))
                  (name (browser-entry-name entry))
+                 (root (frame-browser-root frame))
+                 (rel-title (relative-path-title path root))
                  (playlist (frame-playlist frame)))
             (when playlist
-              (let ((track (make-track-from-file path)))
-                (add-track playlist track (1+ (frame-selected-index frame)))
+              (let ((track (make-track-from-file path :title rel-title)))
+                (setf (add-playlist-element playlist (1+ (frame-selected-index frame))) track)
                 (incf (frame-selected-index frame))
                 (setf (frame-message frame)
                       (format nil "Added: ~A" name))))))
@@ -589,10 +827,13 @@
          (playlist (frame-playlist frame))
          (count 0))
     (when (and (frame-browse-mode-p frame) playlist selected)
-      (dolist (entry selected)
-        (let ((track (make-track-from-file (browser-entry-path entry))))
-          (add-track playlist track (+ (frame-selected-index frame) count 1))
-          (incf count)))
+      (let ((root (frame-browser-root frame)))
+        (dolist (entry selected)
+          (let* ((path (browser-entry-path entry))
+                 (rel-title (relative-path-title path root))
+                 (track (make-track-from-file path :title rel-title)))
+            (setf (add-playlist-element playlist (+ (frame-selected-index frame) count 1)) track)
+            (incf count))))
       (incf (frame-selected-index frame) count)
       ;; Clear selections
       (dolist (e entries)
@@ -602,13 +843,31 @@
       (redisplay-frame-panes frame)
       (render-browser-to-interactor frame))))
 
+(defun relative-path-title (path root)
+  "Compute PATH relative to ROOT using string operations (avoids pathname wildcard issues)."
+  (let ((root-str (if (stringp root) root (namestring root)))
+        (path-str (if (stringp path) path (namestring path))))
+    (if (and (>= (length path-str) (length root-str))
+             (string= path-str root-str :end1 (length root-str)))
+        (subseq path-str (length root-str))
+        path-str)))
+
+(defun parent-directory-string (dir-str)
+  "Compute parent directory from a directory path string."
+  (let* ((trimmed (string-right-trim "/" dir-str))
+         (slash-pos (position #\/ trimmed :from-end t)))
+    (when slash-pos
+      (subseq dir-str 0 (1+ slash-pos)))))
+
 (define-playlisp-editor-command (com-browser-back :name "Nav Back")
     ()
   (let* ((frame *application-frame*)
-         (dir (frame-browser-dir frame)))
+         (dir (if (stringp (frame-browser-dir frame))
+                  (frame-browser-dir frame)
+                  (namestring (frame-browser-dir frame)))))
     (when (and (frame-browse-mode-p frame) dir)
-      (let ((parent (uiop:pathname-parent-directory-pathname dir)))
-        (when (and parent (not (equal parent dir)))
+      (let ((parent (parent-directory-string dir)))
+        (when (and parent (not (string= parent dir)))
           (setf (frame-browser-dir frame) parent
                 (frame-browser-entries frame) (browser-refresh-entries parent)
                 (frame-browser-cursor frame) 0
@@ -705,6 +964,8 @@
                   ((eql key-name :backspace) (return '(com-browser-back)))
                   ((eql key-name :escape)    (return '(com-browser-close)))
                   ((eql char #\Space)        (return '(com-browser-space)))
+                  ;; 'a' adds all starred tracks to the playlist
+                  ((eql char #\a)             (return '(com-browser-add-selected)))
                   ;; Ctrl-Q quits even in browse mode
                   ((and (eql key-name :|q|)
                         (not (zerop (logand mods +control-key+))))
