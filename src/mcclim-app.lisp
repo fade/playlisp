@@ -73,7 +73,7 @@
       (1/2 tracklist)
       (1/4 details)
       (1/4 interactor))))
-  (:top-level (clim-charmed:charmed-frame-top-level))
+  (:top-level (default-frame-top-level))
   (:command-table (playlisp-editor
                    :inherit-from ())))
 
@@ -357,8 +357,7 @@
 
 ;; Browse directory and show files
 (define-playlisp-editor-command (com-browse :name "Browse" :keystroke (#\b))
-    ((dir 'pathname :prompt "Directory" 
-          :default *default-music-path*))
+    ((dir 'pathname :prompt "Directory"))
   (let ((stream (frame-standard-output *application-frame*)))
     (fresh-line stream)
     (with-text-face (stream :bold)
