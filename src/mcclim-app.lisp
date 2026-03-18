@@ -653,16 +653,22 @@
 
 ;;; ── Browse Mode Key Dispatch ────────────────────────────────────────
 
-;;; In browse mode we read key events directly from the interactor pane's
-;;; event queue (charmed routes key events to the focused pane, not the
-;;; frame queue).  This bypasses the normal command-line reader.
+;;; In browse mode we read key events from the frame's event queue.
+;;; The charmed port routes keys here (via queue-append) when
+;;; charmed-frame-wants-raw-keys-p returns T.  queue-read drives
+;;; process-next-event to pump terminal input in the single-threaded loop.
 (defmethod read-frame-command ((frame playlisp-editor) &key stream)
   (declare (ignore stream))
   (if (frame-browse-mode-p frame)
-      ;; Browse mode: read events from the interactor pane's event queue
-      (let ((interactor (get-frame-pane frame 'interactor)))
+      ;; Browse mode: read events from the frame's event queue
+      ;; (charmed routes keys here when charmed-frame-wants-raw-keys-p is T)
+      (let ((queue (climi::frame-event-queue frame)))
+        (with-open-file (log "/tmp/charmed-browse.log" :direction :output
+                             :if-exists :append :if-does-not-exist :create)
+          (format log "READ-FRAME-CMD: browse=~A queue=~A~%"
+                  (frame-browse-mode-p frame) (type-of queue)))
         (loop
-          (let ((event (event-read interactor)))
+          (let ((event (climi::queue-read queue)))
             (when (typep event 'key-press-event)
               (let ((key-name (keyboard-event-key-name event))
                     (char (keyboard-event-character event))
