@@ -153,7 +153,8 @@
    (browser-entries :initform nil :accessor frame-browser-entries)
    (browser-cursor :initform 0 :accessor frame-browser-cursor)
    (browser-scroll :initform 0 :accessor frame-browser-scroll)
-   (browse-mode-p :initform nil :accessor frame-browse-mode-p))
+   (browse-mode-p :initform nil :accessor frame-browse-mode-p)
+   (edit-mode-p :initform nil :accessor frame-edit-mode-p))
   (:panes
    (tracklist :application
               :scroll-bars nil
@@ -182,7 +183,8 @@
 
 ;;; Tell charmed-mcclim to pass arrow keys through when in browse mode
 (defmethod clim-charmed:charmed-frame-wants-raw-keys-p ((frame playlisp-editor))
-  (frame-browse-mode-p frame))
+  (or (frame-browse-mode-p frame)
+      (frame-edit-mode-p frame)))
 
 ;;; ── Helpers ──────────────────────────────────────────────────────────
 
@@ -263,6 +265,10 @@
          (name (if playlist (playlist-name playlist) "No Playlist"))
          (cols (get-pane-columns frame pane)))
     ;; Header
+    (when (frame-edit-mode-p frame)
+      (with-text-face (pane :bold)
+        (with-drawing-options (pane :ink +yellow+)
+          (format pane " [EDIT] "))))
     (with-text-face (pane :bold)
       (with-drawing-options (pane :ink +white+)
         (format pane " ♫ ~A" (truncate-string name 60))))
@@ -566,6 +572,80 @@
       (when (>= (frame-selected-index frame) (1- count))
         (setf (frame-selected-index frame) (max 0 (- count 2))))
       (setf (frame-message frame) "Track deleted")
+      (redisplay-frame-panes frame))))
+
+;; Edit mode commands
+(define-playlisp-editor-command (com-enter-edit-mode :name "Edit")
+    ()
+  (let ((frame *application-frame*))
+    (when (and (frame-playlist frame)
+               (plusp (frame-track-count frame)))
+      (setf (frame-edit-mode-p frame) t
+            (frame-message frame) "EDIT MODE: ↑↓ navigate  u/d move  x delete  ESC exit")
+      (redisplay-frame-panes frame))))
+
+(define-playlisp-editor-command (com-edit-close :name "Exit Edit")
+    ()
+  (let ((frame *application-frame*))
+    (setf (frame-edit-mode-p frame) nil
+          (frame-message frame) "Edit mode exited")
+    (redisplay-frame-panes frame)))
+
+(define-playlisp-editor-command (com-edit-up :name "Edit Up")
+    ()
+  (let* ((frame *application-frame*)
+         (idx (frame-selected-index frame)))
+    (when (> idx 0)
+      (decf (frame-selected-index frame))
+      (redisplay-frame-panes frame))))
+
+(define-playlisp-editor-command (com-edit-down :name "Edit Down")
+    ()
+  (let* ((frame *application-frame*)
+         (idx (frame-selected-index frame))
+         (count (frame-track-count frame)))
+    (when (< idx (1- count))
+      (incf (frame-selected-index frame))
+      (redisplay-frame-panes frame))))
+
+(define-playlisp-editor-command (com-edit-move-up :name "Edit Move Up")
+    ()
+  (let* ((frame *application-frame*)
+         (playlist (frame-playlist frame))
+         (idx (frame-selected-index frame)))
+    (when (and playlist (> idx 0))
+      (move-track-up playlist idx)
+      (decf (frame-selected-index frame))
+      (setf (frame-message frame) "Track moved up")
+      (redisplay-frame-panes frame))))
+
+(define-playlisp-editor-command (com-edit-move-down :name "Edit Move Down")
+    ()
+  (let* ((frame *application-frame*)
+         (playlist (frame-playlist frame))
+         (idx (frame-selected-index frame))
+         (count (frame-track-count frame)))
+    (when (and playlist (< idx (1- count)))
+      (move-track-down playlist idx)
+      (incf (frame-selected-index frame))
+      (setf (frame-message frame) "Track moved down")
+      (redisplay-frame-panes frame))))
+
+(define-playlisp-editor-command (com-edit-delete :name "Edit Delete")
+    ()
+  (let* ((frame *application-frame*)
+         (playlist (frame-playlist frame))
+         (idx (frame-selected-index frame))
+         (count (frame-track-count frame)))
+    (when (and playlist (> count 0))
+      (delete-track playlist idx)
+      (when (>= (frame-selected-index frame) (1- count))
+        (setf (frame-selected-index frame) (max 0 (- count 2))))
+      (setf (frame-message frame) "Track deleted")
+      ;; Exit edit mode if playlist is now empty
+      (when (zerop (frame-track-count frame))
+        (setf (frame-edit-mode-p frame) nil
+              (frame-message frame) "Track deleted - playlist empty, edit mode exited"))
       (redisplay-frame-panes frame))))
 
 ;; File operations
@@ -934,48 +1014,73 @@
     ()
   (frame-exit *application-frame*))
 
-;;; ── Browse Mode Key Dispatch ────────────────────────────────────────
+;;; ── Raw Key Dispatch (Browse & Edit Modes) ──────────────────────────
 
-;;; In browse mode we read key events from the frame's event queue.
-;;; The charmed port routes keys here (via queue-append) when
-;;; charmed-frame-wants-raw-keys-p returns T.  queue-read drives
-;;; process-next-event to pump terminal input in the single-threaded loop.
+;;; When charmed-frame-wants-raw-keys-p returns T (browse or edit mode),
+;;; the charmed port routes keys to the frame's event queue via queue-append.
+;;; queue-read drives process-next-event to pump terminal input.
+(defun dispatch-common-keys (key-name char mods)
+  "Handle keys common to both browse and edit modes. Returns a command list or NIL."
+  (cond
+    ;; Ctrl-Q quits from any raw-key mode
+    ((and (eql key-name :|q|)
+          (not (zerop (logand mods +control-key+))))
+     '(com-quit))
+    ;; Ctrl-S saves from any raw-key mode
+    ((and (eql key-name :|s|)
+          (not (zerop (logand mods +control-key+))))
+     '(com-save))
+    (t nil)))
+
+(defun dispatch-browse-key (key-name char mods)
+  "Dispatch a key event in browse mode. Returns a command list or NIL."
+  (or (dispatch-common-keys key-name char mods)
+      (cond
+        ((eql key-name :down)      '(com-browser-down))
+        ((eql key-name :up)        '(com-browser-up))
+        ((eql key-name :newline)   '(com-browser-enter))
+        ((eql key-name :return)    '(com-browser-enter))
+        ((eql key-name :backspace) '(com-browser-back))
+        ((eql key-name :escape)    '(com-browser-close))
+        ((eql char #\Space)        '(com-browser-space))
+        ((eql char #\a)            '(com-browser-add-selected))
+        (t nil))))
+
+(defun dispatch-edit-key (key-name char mods)
+  "Dispatch a key event in edit mode. Returns a command list or NIL.
+   ↑/↓ navigate, u/d move track up/down, x/Delete delete, ESC exit."
+  (or (dispatch-common-keys key-name char mods)
+      (cond
+        ;; Plain Up/Down: navigate
+        ((eql key-name :up)                '(com-edit-up))
+        ((eql key-name :down)              '(com-edit-down))
+        ;; u/d: move track up/down
+        ((eql char #\u)                    '(com-edit-move-up))
+        ((eql char #\d)                    '(com-edit-move-down))
+        ;; Delete track
+        ((eql char #\x)                    '(com-edit-delete))
+        ((eql key-name :delete)            '(com-edit-delete))
+        ;; ESC: exit edit mode
+        ((eql key-name :escape)            '(com-edit-close))
+        (t nil))))
+
 (defmethod read-frame-command ((frame playlisp-editor) &key stream)
   (declare (ignore stream))
-  (if (frame-browse-mode-p frame)
-      ;; Browse mode: read events from the frame's event queue
-      ;; (charmed routes keys here when charmed-frame-wants-raw-keys-p is T)
-      (let ((queue (climi::frame-event-queue frame)))
-        (with-open-file (log "/tmp/charmed-browse.log" :direction :output
-                             :if-exists :append :if-does-not-exist :create)
-          (format log "READ-FRAME-CMD: browse=~A queue=~A~%"
-                  (frame-browse-mode-p frame) (type-of queue)))
-        (loop
-          (let ((event (climi::queue-read queue)))
-            (when (typep event 'key-press-event)
-              (let ((key-name (keyboard-event-key-name event))
+  (cond
+    ((or (frame-browse-mode-p frame) (frame-edit-mode-p frame))
+     (let ((queue (climi::frame-event-queue frame))
+           (browse-p (frame-browse-mode-p frame)))
+       (loop
+         (let ((event (climi::queue-read queue)))
+           (when (typep event 'key-press-event)
+             (let* ((key-name (keyboard-event-key-name event))
                     (char (keyboard-event-character event))
-                    (mods (event-modifier-state event)))
-                (cond
-                  ((eql key-name :down)      (return '(com-browser-down)))
-                  ((eql key-name :up)        (return '(com-browser-up)))
-                  ((eql key-name :newline)   (return '(com-browser-enter)))
-                  ((eql key-name :return)    (return '(com-browser-enter)))
-                  ((eql key-name :backspace) (return '(com-browser-back)))
-                  ((eql key-name :escape)    (return '(com-browser-close)))
-                  ((eql char #\Space)        (return '(com-browser-space)))
-                  ;; 'a' adds all starred tracks to the playlist
-                  ((eql char #\a)             (return '(com-browser-add-selected)))
-                  ;; Ctrl-Q quits even in browse mode
-                  ((and (eql key-name :|q|)
-                        (not (zerop (logand mods +control-key+))))
-                   (return '(com-quit)))
-                  ;; Ctrl-S saves even in browse mode
-                  ((and (eql key-name :|s|)
-                        (not (zerop (logand mods +control-key+))))
-                   (return '(com-save)))))))))
-      ;; Normal mode: use standard command reading
-      (call-next-method)))
+                    (mods (event-modifier-state event))
+                    (cmd (if browse-p
+                             (dispatch-browse-key key-name char mods)
+                             (dispatch-edit-key key-name char mods))))
+               (when cmd (return cmd))))))))
+    (t (call-next-method))))
 
 ;;; ── Standard Output ──────────────────────────────────────────────────
 
