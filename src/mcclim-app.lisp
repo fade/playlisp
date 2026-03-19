@@ -258,13 +258,31 @@
           (if vp (max 40 (round (third vp))) 80))
         80)))
 
+(defun get-pane-rows (frame pane)
+  "Return the number of rows available in PANE, or a default."
+  (let* ((fm (frame-manager frame))
+         (port (when fm (port fm))))
+    (if (and port (typep port 'clim-charmed::charmed-port))
+        (let ((vp (gethash pane (clim-charmed::charmed-port-viewport-sizes port))))
+          (if vp (max 10 (round (fourth vp))) 25))
+        25)))
+
 (defun display-tracklist (frame pane)
   "Display the playlist tracks with the selected one highlighted."
+  ;; Reset charmed scroll offset so header stays at top
+  (let* ((fm (frame-manager frame))
+         (port (when fm (port fm))))
+    (when (and port (typep port 'clim-charmed::charmed-port))
+      (setf (clim-charmed::pane-scroll-offset port pane) 0)))
   (let* ((playlist (frame-playlist frame))
          (tracks (frame-tracks frame))
          (selected (frame-selected-index frame))
          (name (if playlist (playlist-name playlist) "No Playlist"))
-         (cols (get-pane-columns frame pane)))
+         (cols (get-pane-columns frame pane))
+         (total-rows (get-pane-rows frame pane))
+         (header-rows 3)  ;; title line, info line, separator
+         (track-rows (max 1 (- total-rows header-rows)))
+         (num-tracks (length tracks)))
     ;; Header
     (when (frame-edit-mode-p frame)
       (with-text-face (pane :bold)
@@ -288,17 +306,33 @@
       (setf (frame-message frame) nil))
     (terpri pane)
     (format pane "~A~%" (make-string (min cols 80) :initial-element #\─))
-    ;; Track list
+    ;; Track list — paginated to fit pane
     (if (null tracks)
         (progn
           (terpri pane)
           (with-drawing-options (pane :ink +gray50+)
             (format pane "  (empty playlist)~%")
             (format pane "  Type 'Add' to add tracks or 'Open' to load a playlist~%")))
-        (loop for track in tracks
-              for i from 0
-              for is-selected = (= i selected)
-              do (display-track-line pane track i is-selected cols)))))
+        (let* ((num-tracks (length tracks))
+               ;; Selected track uses 2 rows (track + underline), others use 1
+               (visible (max 1 (1- track-rows)))
+               ;; Compute scroll window: keep selected track visible
+               (scroll-start (max 0 (min (- num-tracks visible)
+                                         (- selected (floor visible 2)))))
+               (scroll-end (min num-tracks (+ scroll-start visible))))
+          ;; Show scroll indicator at top if not at beginning
+          (when (> scroll-start 0)
+            (with-drawing-options (pane :ink +gray50+)
+              (format pane "   ↑ ~D more~%" scroll-start)))
+          ;; Render visible tracks
+          (loop for i from scroll-start below scroll-end
+                for track = (nth i tracks)
+                for is-selected = (= i selected)
+                do (display-track-line pane track i is-selected cols))
+          ;; Show scroll indicator at bottom if not at end
+          (when (< scroll-end num-tracks)
+            (with-drawing-options (pane :ink +gray50+)
+              (format pane "   ↓ ~D more~%" (- num-tracks scroll-end))))))))
 
 (defun display-track-line (pane track index selected-p &optional (cols 80))
   "Display a single track line, clickable."
