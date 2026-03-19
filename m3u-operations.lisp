@@ -2,6 +2,8 @@
 
 (uiop:define-package #:playlisp/m3u-operations
   (:use #:cl #:alexandria)
+  (:local-nicknames (:a :alexandria))
+  (:import-from #:parse-number #:parse-number)
   (:use-reexport #:playlisp/parser)
   (:nicknames :m3uop)
   (:export
