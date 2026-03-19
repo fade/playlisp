@@ -1,0 +1,128 @@
+#+TITLE: Playlisp McCLIM TUI
+#+AUTHOR: Glenn Thompson
+#+DATE: 2026-03-19
+
+* Overview
+
+Playlisp includes a terminal-based playlist editor built on [[https://mcclim.common-lisp.dev/][McCLIM]] using the
+=charmed-mcclim= backend. It provides a three-pane interface for viewing,
+editing, and managing M3U playlists directly in the terminal.
+
+* Requirements
+
+- SBCL (Steel Bank Common Lisp)
+- Quicklisp
+- [[https://github.com/fadein/charmed-mcclim][charmed-mcclim]] backend (must be loadable via ASDF/Quicklisp)
+- =ffprobe= (from FFmpeg) for automatic track duration detection
+
+* Running
+
+#+begin_src shell
+sbcl --eval "(ql:quickload :playlisp/mcclim)" \
+     --eval '(playlisp/src/mcclim-app:run "playlist.m3u")'
+#+end_src
+
+Omit the filename argument to start with an empty playlist.
+
+* Interface Layout
+
+The TUI is divided into three panes:
+
+| Pane        | Position | Purpose                              |
+|-------------+----------+--------------------------------------|
+| Tracklist   | Top      | Playlist tracks with selection arrow |
+| Details     | Middle   | Title, duration, path of selected    |
+| Interactor  | Bottom   | Command prompt and help output       |
+
+* Commands
+
+Type commands at the =playlisp>= prompt. Commands are case-insensitive.
+
+| Command         | Description                                    |
+|-----------------+------------------------------------------------|
+| =Open=          | Load an M3U playlist file                      |
+| =New=           | Create a new empty playlist                    |
+| =Save=          | Save playlist (prompts for path if new)        |
+| =Save As=       | Save to a new file path                        |
+| =Write=         | Alias for Save                                 |
+| =Browse=        | Open file browser (provide directory path)     |
+| =Add=           | Add a single audio file to the playlist        |
+| =Edit=          | Enter edit mode for track reordering           |
+| =Metadata=      | Edit playlist metadata (name, phase, etc.)     |
+| =Help=          | Show keyboard shortcut reference               |
+| =Last=          | Jump to the last track                         |
+| =Quit=          | Exit the application                           |
+
+* Keyboard Shortcuts
+
+** Normal Mode (at the prompt)
+
+| Key     | Action                        |
+|---------+-------------------------------|
+| Ctrl-N  | Select next track             |
+| Ctrl-P  | Select previous track         |
+| Ctrl-A  | Select first track            |
+| Ctrl-U  | Move selected track up        |
+| Ctrl-D  | Move selected track down      |
+| Ctrl-X  | Delete selected track         |
+| Ctrl-R  | Refresh track duration        |
+| Ctrl-E  | Enter edit mode               |
+| Ctrl-S  | Save playlist                 |
+| Ctrl-Q  | Quit                          |
+
+** Edit Mode (entered via =Ctrl-E= or =Edit=)
+
+| Key | Action            |
+|-----+-------------------|
+| ↑   | Navigate up       |
+| ↓   | Navigate down     |
+| u   | Move track up     |
+| d   | Move track down   |
+| x   | Delete track      |
+| ESC | Exit edit mode    |
+
+** File Browser (entered via =Browse /path/=)
+
+| Key       | Action                              |
+|-----------+-------------------------------------|
+| ↑ / ↓     | Navigate entries                    |
+| Enter     | Open directory or add file          |
+| Space     | Toggle star selection on file       |
+| a         | Add all starred tracks to playlist  |
+| Backspace | Go to parent directory              |
+| ESC       | Close browser                       |
+
+* M3U Format
+
+Playlisp reads and writes extended M3U files with custom metadata headers:
+
+#+begin_src
+#EXTM3U
+#PLAYLIST:My Playlist
+#PHASE:Phase Name
+#DURATION:45 minutes
+#CURATOR:username
+#DESCRIPTION:A description of the playlist
+#EXTINF:315,Artist/01 - Track Title.flac
+/full/path/to/Artist/01 - Track Title.flac
+#+end_src
+
+When saving a new playlist, the editor prompts for:
+- File path (auto-appends =.m3u= if missing)
+- Playlist name
+- Phase
+- Curator
+- Description
+
+Duration is computed automatically from track runtimes.
+
+* Architecture
+
+The TUI is defined in =src/mcclim-app.lisp= and uses:
+
+- =playlisp/parser= — CLOS classes for playlists and tracks, M3U parsing
+- =playlisp/m3u-operations= — Playlist mutation (add, move, delete, serialize)
+- =mcclim-charmed= — Terminal rendering backend for McCLIM
+
+The application frame =playlisp-editor= manages all state including playlist
+data, selection index, browser state, and mode flags (browse/edit).
