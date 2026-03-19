@@ -169,9 +169,9 @@
   (:layouts
    (default
     (vertically ()
-      (1/2 tracklist)
-      (1/4 details)
-      (1/4 interactor))))
+      (9/20 tracklist)
+      (3/20 details)
+      (2/5 interactor))))
   (:top-level (default-frame-top-level :prompt 'print-prompt))
   (:command-table (playlisp-editor
                    :inherit-from ())))
@@ -343,16 +343,11 @@
 (defun display-details (frame pane)
   "Display details of the currently selected track."
   (let ((track (frame-selected-track frame)))
-    (with-text-face (pane :bold)
-      (with-drawing-options (pane :ink +cyan+)
-        (format pane " Track Details~%")))
-    (format pane "─────────────────────────────────────────────────────────────~%")
     (if (null track)
         (with-drawing-options (pane :ink +gray50+)
           (format pane "  No track selected~%"))
         (progn
           (format-detail-line pane "Title" (title track))
-          (format-detail-line pane "Artist" (artist track))
           (format-detail-line pane "Duration" (format-duration (runtime track)))
           (format-detail-line pane "Path" (track-path track))))))
 
@@ -529,7 +524,7 @@
     (setf (frame-selected-index frame) 0)
     (redisplay-frame-panes frame)))
 
-(define-playlisp-editor-command (com-last-track :name "Last" :keystroke (#\e :control))
+(define-playlisp-editor-command (com-last-track :name "Last")
     ()
   (let* ((frame *application-frame*)
          (count (frame-track-count frame)))
@@ -576,7 +571,7 @@
       (redisplay-frame-panes frame))))
 
 ;; Edit mode commands
-(define-playlisp-editor-command (com-enter-edit-mode :name "Edit")
+(define-playlisp-editor-command (com-enter-edit-mode :name "Edit" :keystroke (#\e :control))
     ()
   (let ((frame *application-frame*))
     (when (and (frame-playlist frame)
@@ -587,9 +582,25 @@
 
 (define-playlisp-editor-command (com-edit-close :name "Exit Edit")
     ()
-  (let ((frame *application-frame*))
+  (let* ((frame *application-frame*)
+         (stream (get-frame-pane frame 'interactor))
+         (fm (frame-manager frame))
+         (port (when fm (port fm))))
     (setf (frame-edit-mode-p frame) nil
           (frame-message frame) "Edit mode exited")
+    ;; Clear and reset the interactor so charmed restores keyboard input
+    (when (and stream port (typep port 'clim-charmed::charmed-port))
+      (let ((screen (clim-charmed::charmed-port-screen port))
+            (vp (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
+        (when (and screen vp)
+          (charmed:screen-fill-rect screen
+                                    (round (first vp))
+                                    (round (second vp))
+                                    (round (third vp))
+                                    (round (fourth vp)))))
+      (setf (clim-charmed::pane-scroll-offset port stream) 0))
+    (when stream
+      (window-clear stream))
     (redisplay-frame-panes frame)))
 
 (define-playlisp-editor-command (com-edit-up :name "Edit Up")
@@ -973,37 +984,38 @@
                 (format nil "Duration: ~A" (format-duration duration)))
           (redisplay-frame-panes frame))))))
 
-;; Help
+;; Help — clear interactor then print help so prompt stays accessible
 (define-playlisp-editor-command (com-help :name "Help")
     ()
-  (let ((stream (frame-standard-output *application-frame*)))
-    (fresh-line stream)
-    (with-text-face (stream :bold)
-      (with-drawing-options (stream :ink +cyan+)
-        (format stream "~%Playlisp Commands:~%")))
-    (format stream "~%")
-    (with-text-face (stream :bold)
-      (format stream " Tracklist:~%"))
-    (format stream "  Ctrl-N / Ctrl-P  - Next / Previous track~%")
-    (format stream "  Ctrl-A / Ctrl-E  - First / Last track~%")
-    (format stream "  Ctrl-U / Ctrl-D  - Move track up / down~%")
-    (format stream "  Ctrl-X           - Delete selected track~%")
-    (format stream "  Ctrl-R           - Refresh duration (ffprobe)~%")
-    (format stream "~%")
-    (with-text-face (stream :bold)
-      (format stream " File Browser (after 'Browse /path/'):~%"))
-    (format stream "  ↑/↓              - Navigate entries~%")
-    (format stream "  Enter            - Open directory / add file~%")
-    (format stream "  Space            - Toggle selection~%")
-    (format stream "  Backspace        - Go to parent directory~%")
-    (format stream "  Escape           - Close browser~%")
-    (format stream "~%")
-    (with-text-face (stream :bold)
-      (format stream " General:~%"))
-    (format stream "  Ctrl-S           - Save playlist~%")
-    (format stream "  Ctrl-Q           - Quit~%")
-    (format stream "~%")
-    (format stream " Type: Open, Add, Browse, Save, New, Help, Quit~%")))
+  (let* ((frame *application-frame*)
+         (stream (get-frame-pane frame 'interactor))
+         (fm (frame-manager frame))
+         (port (when fm (port fm))))
+    ;; Clear the interactor screen area
+    (when (and stream port (typep port 'clim-charmed::charmed-port))
+      (let ((screen (clim-charmed::charmed-port-screen port))
+            (vp (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
+        (when (and screen vp)
+          (charmed:screen-fill-rect screen
+                                    (round (first vp))
+                                    (round (second vp))
+                                    (round (third vp))
+                                    (round (fourth vp)))))
+      (setf (clim-charmed::pane-scroll-offset port stream) 0))
+    (when stream (window-clear stream))
+    ;; Print compact help
+    (let ((s (frame-standard-output frame)))
+      (with-drawing-options (s :ink +cyan+)
+        (format s "Ctrl-N/P next/prev  Ctrl-A first  Ctrl-U/D move  Ctrl-X del  Ctrl-R refresh~%"))
+      (with-drawing-options (s :ink +cyan+)
+        (format s "Ctrl-E edit mode  Ctrl-S save  Ctrl-Q quit~%"))
+      (with-drawing-options (s :ink +yellow+)
+        (format s "Edit: ↑↓ nav  u/d move  x del  ESC exit~%"))
+      (with-drawing-options (s :ink +yellow+)
+        (format s "Browser: ↑↓ nav  Enter open  Space star  a add  Bksp back  ESC close~%"))
+      (with-drawing-options (s :ink +gray50+)
+        (format s "Commands: Open Add Browse Save New Edit Metadata Help Last Quit~%")))))
+
 
 ;; Quit
 (define-playlisp-editor-command (com-quit :name "Quit" :keystroke (:q :control))
