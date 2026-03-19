@@ -172,14 +172,15 @@
       (1/2 tracklist)
       (1/4 details)
       (1/4 interactor))))
-  (:top-level (default-frame-top-level))
+  (:top-level (default-frame-top-level :prompt 'print-prompt))
   (:command-table (playlisp-editor
                    :inherit-from ())))
 
 (defun print-prompt (stream frame)
-  (declare (ignore frame))
-  (with-drawing-options (stream :ink +cyan+)
-    (format stream "playlisp> ")))
+  (unless (or (frame-browse-mode-p frame)
+              (frame-edit-mode-p frame))
+    (with-drawing-options (stream :ink +cyan+)
+      (format stream "playlisp> "))))
 
 ;;; Tell charmed-mcclim to pass arrow keys through when in browse mode
 (defmethod clim-charmed:charmed-frame-wants-raw-keys-p ((frame playlisp-editor))
