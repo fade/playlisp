@@ -597,7 +597,7 @@
          (idx (frame-selected-index frame))
          (count (frame-track-count frame)))
     (when (and playlist (> count 0))
-      (delete-track playlist idx)
+      (delete-track idx playlist)
       ;; Adjust cursor if needed
       (when (>= (frame-selected-index frame) (1- count))
         (setf (frame-selected-index frame) (max 0 (- count 2))))
@@ -684,7 +684,7 @@
          (idx (frame-selected-index frame))
          (count (frame-track-count frame)))
     (when (and playlist (> count 0))
-      (delete-track playlist idx)
+      (delete-track idx playlist)
       (when (>= (frame-selected-index frame) (1- count))
         (setf (frame-selected-index frame) (max 0 (- count 2))))
       (setf (frame-message frame) "Track deleted")
