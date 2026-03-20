@@ -15,7 +15,7 @@
                 #:parse-m3u-file)
   (:import-from #:playlisp/m3u-operations
                 #:find-track
-                #:rmtrack
+                #:delete-track
                 #:add-playlist-element)
   (:shadowing-import-from #:parachute #:fail)
   (:shadowing-import-from #:parsector #:skip))
@@ -199,12 +199,12 @@
     ;; Not found returns NIL
     (is eq nil (find-track pl "Aphex Twin" :by :artist))))
 
-(define-test rmtrack-tests
+(define-test delete-track-tests
   :parent m3u-operations-tests
   ;; Remove from middle, check count and renumbering
   (let* ((pl (make-ops-test-playlist))
          (track (find-track pl "Track Two" :by :title)))
-    (rmtrack track pl)
+    (delete-track track pl)
     (is = 2 (length (playlist-elements pl)))
     (is string= "Track One"   (title (first  (playlist-elements pl))))
     (is string= "Track Three" (title (second (playlist-elements pl))))
@@ -213,21 +213,50 @@
   ;; Remove first track
   (let* ((pl (make-ops-test-playlist))
          (track (find-track pl 1 :by :qnumber)))
-    (rmtrack track pl)
+    (delete-track track pl)
     (is = 2 (length (playlist-elements pl)))
     (is string= "Track Two" (title (first (playlist-elements pl))))
     (is = 1 (qnumber (first (playlist-elements pl)))))
   ;; Remove last track
   (let* ((pl (make-ops-test-playlist))
          (track (find-track pl 3 :by :qnumber)))
-    (rmtrack track pl)
+    (delete-track track pl)
     (is = 2 (length (playlist-elements pl)))
     (is string= "Track Two" (title (second (playlist-elements pl))))
     (is = 2 (qnumber (second (playlist-elements pl)))))
-  ;; rmtrack returns the playlist
+  ;; delete-track returns the playlist
   (let* ((pl (make-ops-test-playlist))
          (track (first (playlist-elements pl))))
-    (is eq pl (rmtrack track pl))))
+    (is eq pl (delete-track track pl)))
+  ;; --- index dispatch (0-based, returns new cursor index) ---
+  ;; Remove middle track by index
+  (let* ((pl (make-ops-test-playlist))
+         (new-index (delete-track 1 pl)))
+    (is = 1 new-index)
+    (is = 2 (length (playlist-elements pl)))
+    (is string= "Track One"   (title (first  (playlist-elements pl))))
+    (is string= "Track Three" (title (second (playlist-elements pl))))
+    (is = 1 (qnumber (first  (playlist-elements pl))))
+    (is = 2 (qnumber (second (playlist-elements pl)))))
+  ;; Remove first track by index — cursor stays at 0
+  (let* ((pl (make-ops-test-playlist))
+         (new-index (delete-track 0 pl)))
+    (is = 0 new-index)
+    (is = 2 (length (playlist-elements pl)))
+    (is string= "Track Two"   (title (first  (playlist-elements pl))))
+    (is string= "Track Three" (title (second (playlist-elements pl)))))
+  ;; Remove last track by index — cursor clamps down by one
+  (let* ((pl (make-ops-test-playlist))
+         (new-index (delete-track 2 pl)))
+    (is = 1 new-index)
+    (is = 2 (length (playlist-elements pl)))
+    (is string= "Track One" (title (first  (playlist-elements pl))))
+    (is string= "Track Two" (title (second (playlist-elements pl)))))
+  ;; Out-of-bounds index — playlist unchanged, cursor clamped to last valid index
+  (let* ((pl (make-ops-test-playlist))
+         (new-index (delete-track 99 pl)))
+    (is = 2 new-index)
+    (is = 3 (length (playlist-elements pl)))))
 
 (define-test add-playlist-element-tests
   :parent m3u-operations-tests

@@ -121,7 +121,7 @@ String comparisons are case-insensitive. Returns the matching track or NIL."
       (setf (playlist-elements playlist)
             (resmoother (append (subseq tracks 0 index)
                                 (nthcdr (1+ index) tracks)))))
-    (min index (max 0 (1- (length playlist-elements playlist))))))
+    (min index (max 0 (1- (length (playlist-elements playlist)))))))
 
 ;;; ── Track reordering and deletion ───────────────────────────────
 
