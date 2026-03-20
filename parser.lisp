@@ -74,6 +74,9 @@ written for dynamic playlist support in the Asteroid Radio project."))
                            :playlist-description description
                            :playlist-elements elements))
 
+;; (defmethod print-object (playlist playlist) (stream nil)
+;;   (with-open-file ))
+
 (defclass track ()
   ((title :accessor title :initarg :title
           :initform nil

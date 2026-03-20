@@ -9,7 +9,6 @@
   (:export
    #:add-playlist-element
    #:find-track
-   #:rmtrack
    #:get-audio-duration
    #:make-track-from-file
    #:write-m3u-file
@@ -106,14 +105,23 @@ String comparisons are case-insensitive. Returns the matching track or NIL."
 
 ;;; remove a track from a playlist
 
-(defgeneric rmtrack (track playlist)
+(defgeneric delete-track (track playlist)
   (:documentation "Remove a track from the playlist-elements list in a playlist object"))
 
-(defmethod rmtrack ((track track) (playlist playlist))
+(defmethod delete-track ((track track) (playlist playlist))
   "Remove TRACK from PLAYLIST by identity, then renumber the remaining tracks."
   (setf (playlist-elements playlist)
         (resmoother (remove track (playlist-elements playlist) :test #'eq)))
   playlist)
+
+(defmethod delete-track ((index number) (playlist playlist))
+  "Remove track at INDEX from PLAYLIST. Returns new cursor index."
+  (let ((tracks (playlist-elements playlist)))
+    (when (and tracks (< index (length tracks)))
+      (setf (playlist-elements playlist)
+            (resmoother (append (subseq tracks 0 index)
+                                (nthcdr (1+ index) tracks)))))
+    (min index (max 0 (1- (length (playlist-elements playlist)))))))
 
 ;;; ── Track reordering and deletion ───────────────────────────────
 
@@ -135,14 +143,14 @@ String comparisons are case-insensitive. Returns the matching track or NIL."
       (return-from move-track-down (1+ index))))
   index)
 
-(defun delete-track (playlist index)
-  "Remove track at INDEX from PLAYLIST. Returns new cursor index."
-  (let ((tracks (playlist-elements playlist)))
-    (when (and tracks (< index (length tracks)))
-      (setf (playlist-elements playlist)
-            (resmoother (append (subseq tracks 0 index)
-                                (nthcdr (1+ index) tracks)))))
-    (min index (max 0 (1- (length (playlist-elements playlist)))))))
+;; (defun delete-track (playlist index)
+;;   "Remove track at INDEX from PLAYLIST. Returns new cursor index."
+;;   (let ((tracks (playlist-elements playlist)))
+;;     (when (and tracks (< index (length tracks)))
+;;       (setf (playlist-elements playlist)
+;;             (resmoother (append (subseq tracks 0 index)
+;;                                 (nthcdr (1+ index) tracks)))))
+;;     (min index (max 0 (1- (length (playlist-elements playlist)))))))
 
 ;;; ── Write playlist to M3U file ──────────────────────────────────
 

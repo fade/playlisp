@@ -221,14 +221,14 @@ string comparison; =:qnumber= uses =eql=.
 
 *** Removing a track
 
-=(rmtrack track playlist)=
+=(delete-track track playlist)=
 
 Removes =track= from =playlist= by object identity and renumbers the
 remaining tracks. Returns the modified playlist.
 
 #+begin_src lisp
 (let ((track (m3uop:find-track *playlist* "Orbital - Halcyon" :by :title)))
-  (m3uop:rmtrack track *playlist*))
+  (m3uop:delete-track track *playlist*))
 ;; => *playlist* (now without that track, remaining tracks renumbered)
 #+end_src
 
