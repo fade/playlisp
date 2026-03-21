@@ -267,6 +267,11 @@
           (if vp (max 10 (round (fourth vp))) 25))
         25)))
 
+(defun frame-tracklist-active-p (frame)
+  "Return T when the tracklist pane should be highlighted as active."
+  (or (frame-edit-mode-p frame)
+      (frame-browse-mode-p frame)))
+
 (defun display-tracklist (frame pane)
   "Display the playlist tracks with the selected one highlighted."
   ;; Reset charmed scroll offset so header stays at top
@@ -282,14 +287,21 @@
          (total-rows (get-pane-rows frame pane))
          (header-rows 3)  ;; title line, info line, separator
          (track-rows (max 1 (- total-rows header-rows)))
-         (num-tracks (length tracks)))
+         (num-tracks (length tracks))
+         (active-p (frame-tracklist-active-p frame))
+         (border-ink (if active-p +cyan+ +gray50+))
+         (title-ink (if active-p +white+ +gray50+)))
     ;; Header
     (when (frame-edit-mode-p frame)
       (with-text-face (pane :bold)
         (with-drawing-options (pane :ink +yellow+)
           (format pane " [EDIT] "))))
+    (when (frame-browse-mode-p frame)
+      (with-text-face (pane :bold)
+        (with-drawing-options (pane :ink +green+)
+          (format pane " [BROWSE] "))))
     (with-text-face (pane :bold)
-      (with-drawing-options (pane :ink +white+)
+      (with-drawing-options (pane :ink title-ink)
         (format pane " ♫ ~A" (truncate-string name 60))))
     (when (frame-filepath frame)
       (with-drawing-options (pane :ink +gray50+)
@@ -305,7 +317,8 @@
         (format pane "~A" (frame-message frame)))
       (setf (frame-message frame) nil))
     (terpri pane)
-    (format pane "~A~%" (make-string (min cols 80) :initial-element #\─))
+    (with-drawing-options (pane :ink border-ink)
+      (format pane "~A~%" (make-string (min cols 80) :initial-element #\─)))
     ;; Track list — paginated to fit pane
     (if (null tracks)
         (progn
@@ -376,14 +389,18 @@
 
 (defun display-details (frame pane)
   "Display details of the currently selected track."
-  (let ((track (frame-selected-track frame)))
-    (if (null track)
-        (with-drawing-options (pane :ink +gray50+)
-          (format pane "  No track selected~%"))
-        (progn
-          (format-detail-line pane "Title" (title track))
-          (format-detail-line pane "Duration" (format-duration (runtime track)))
-          (format-detail-line pane "Path" (track-path track))))))
+  (let* ((cols (get-pane-columns frame pane)))
+    ;; Top border — always gray since this pane is never interactive
+    (with-drawing-options (pane :ink +gray50+)
+      (format pane "~A~%" (make-string (min cols 80) :initial-element #\─)))
+    (let ((track (frame-selected-track frame)))
+      (if (null track)
+          (with-drawing-options (pane :ink +gray50+)
+            (format pane "  No track selected~%"))
+          (progn
+            (format-detail-line pane "Title" (title track))
+            (format-detail-line pane "Duration" (format-duration (runtime track)))
+            (format-detail-line pane "Path" (track-path track)))))))
 
 (defun format-detail-line (pane label value)
   "Format a label: value line in the details pane."
