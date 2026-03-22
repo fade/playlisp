@@ -187,6 +187,14 @@
   (or (frame-browse-mode-p frame)
       (frame-edit-mode-p frame)))
 
+;;; Tell charmed-mcclim which pane is active for border highlighting.
+;;; Edit mode: tracklist (user navigates tracks in top pane).
+;;; Browse mode + normal: interactor (user interacts in bottom pane).
+(defmethod clim-charmed:charmed-active-pane ((frame playlisp-editor))
+  (if (frame-edit-mode-p frame)
+      (get-frame-pane frame 'tracklist)
+      (get-frame-pane frame 'interactor)))
+
 ;;; ── Helpers ──────────────────────────────────────────────────────────
 
 (defun frame-tracks (frame)
@@ -269,8 +277,7 @@
 
 (defun frame-tracklist-active-p (frame)
   "Return T when the tracklist pane should be highlighted as active."
-  (or (frame-edit-mode-p frame)
-      (frame-browse-mode-p frame)))
+  (frame-edit-mode-p frame))
 
 (defun display-tracklist (frame pane)
   "Display the playlist tracks with the selected one highlighted."
@@ -341,16 +348,17 @@
           (loop for i from scroll-start below scroll-end
                 for track = (nth i tracks)
                 for is-selected = (= i selected)
-                do (display-track-line pane track i is-selected cols))
+                do (display-track-line pane track i is-selected cols active-p))
           ;; Show scroll indicator at bottom if not at end
           (when (< scroll-end num-tracks)
             (with-drawing-options (pane :ink +gray50+)
               (format pane "   ↓ ~D more~%" (- num-tracks scroll-end))))))))
 
-(defun display-track-line (pane track index selected-p &optional (cols 80))
+(defun display-track-line (pane track index selected-p &optional (cols 80) (active-p t))
   "Display a single track line, clickable."
   ;; Reserve space: 3 (indicator) + 4 (num) + 10 (duration+brackets) = ~17 overhead
   (let* ((title-width (max 20 (- cols 17)))
+         (highlight-ink (if active-p +cyan+ +gray50+))
          (the-title (or (title track) 
                         (file-namestring (track-path track))
                         "Unknown"))
@@ -362,7 +370,7 @@
          (display-title (truncate-string the-title avail-for-text)))
     ;; Selection indicator
     (if selected-p
-        (with-drawing-options (pane :ink +cyan+)
+        (with-drawing-options (pane :ink highlight-ink)
           (format pane " ▶ "))
         (format pane "   "))
     ;; Track number
@@ -383,24 +391,20 @@
     (terpri pane)
     ;; Underline for selected track
     (when selected-p
-      (with-drawing-options (pane :ink +cyan+)
+      (with-drawing-options (pane :ink highlight-ink)
         (format pane "~A~%" (make-string (min cols 80) :initial-element #\─))))))
 
 
 (defun display-details (frame pane)
   "Display details of the currently selected track."
-  (let* ((cols (get-pane-columns frame pane)))
-    ;; Top border — always gray since this pane is never interactive
-    (with-drawing-options (pane :ink +gray50+)
-      (format pane "~A~%" (make-string (min cols 80) :initial-element #\─)))
-    (let ((track (frame-selected-track frame)))
-      (if (null track)
-          (with-drawing-options (pane :ink +gray50+)
-            (format pane "  No track selected~%"))
-          (progn
-            (format-detail-line pane "Title" (title track))
-            (format-detail-line pane "Duration" (format-duration (runtime track)))
-            (format-detail-line pane "Path" (track-path track)))))))
+  (let ((track (frame-selected-track frame)))
+    (if (null track)
+        (with-drawing-options (pane :ink +gray50+)
+          (format pane "  No track selected~%"))
+        (progn
+          (format-detail-line pane "Title" (title track))
+          (format-detail-line pane "Duration" (format-duration (runtime track)))
+          (format-detail-line pane "Path" (track-path track))))))
 
 (defun format-detail-line (pane label value)
   "Format a label: value line in the details pane."
@@ -477,7 +481,7 @@
       (with-drawing-options (stream :ink +gray50+)
         (format stream "──────────────────────────────────────────────────~%"))
       (with-drawing-options (stream :ink +gray50+)
-        (format stream " Up/Dn:nav Enter:open Space:star a:add Bksp:up Esc:close~%"))
+        (format stream " ↑↓/C-n C-p:nav  Enter:open  Space:star  a:add  Bksp:up  Esc:close~%"))
       ;; Entries — show a scrolling window that keeps the cursor visible.
       ;; 3 header lines + 2 summary lines = 5 overhead lines.
       (let* ((vp (when (and port (typep port 'clim-charmed::charmed-port))
@@ -508,7 +512,7 @@
                              (is-selected (browser-entry-selected-p entry)))
                          (if is-cursor
                              (with-drawing-options (stream :ink +cyan+)
-                               (format stream " > "))
+                               (format stream " ▶ "))
                              (format stream "   "))
                          (if is-selected
                              (with-drawing-options (stream :ink +yellow+)
@@ -628,7 +632,7 @@
     (when (and (frame-playlist frame)
                (plusp (frame-track-count frame)))
       (setf (frame-edit-mode-p frame) t
-            (frame-message frame) "EDIT MODE: ↑↓ navigate  u/d move  x delete  ESC exit")
+            (frame-message frame) "EDIT: ↑↓/C-n C-p nav  u/d move  x del  ESC exit")
       (redisplay-frame-panes frame))))
 
 (define-playlisp-editor-command (com-edit-close :name "Exit Edit")
@@ -1087,11 +1091,11 @@
   "Handle keys common to both browse and edit modes. Returns a command list or NIL."
   (cond
     ;; Ctrl-Q quits from any raw-key mode
-    ((and (eql key-name :|q|)
+    ((and (eql key-name :|Q|)
           (not (zerop (logand mods +control-key+))))
      '(com-quit))
     ;; Ctrl-S saves from any raw-key mode
-    ((and (eql key-name :|s|)
+    ((and (eql key-name :|S|)
           (not (zerop (logand mods +control-key+))))
      '(com-save))
     (t nil)))
@@ -1102,6 +1106,13 @@
       (cond
         ((eql key-name :down)      '(com-browser-down))
         ((eql key-name :up)        '(com-browser-up))
+        ;; Ctrl-N / Ctrl-P: down/up (consistent with normal mode)
+        ((and (eql key-name :|N|)
+              (not (zerop (logand mods +control-key+))))
+         '(com-browser-down))
+        ((and (eql key-name :|P|)
+              (not (zerop (logand mods +control-key+))))
+         '(com-browser-up))
         ((eql key-name :newline)   '(com-browser-enter))
         ((eql key-name :return)    '(com-browser-enter))
         ((eql key-name :backspace) '(com-browser-back))
@@ -1118,6 +1129,13 @@
         ;; Plain Up/Down: navigate
         ((eql key-name :up)                '(com-edit-up))
         ((eql key-name :down)              '(com-edit-down))
+        ;; Ctrl-N / Ctrl-P: down/up (consistent with normal mode)
+        ((and (eql key-name :|N|)
+              (not (zerop (logand mods +control-key+))))
+         '(com-edit-down))
+        ((and (eql key-name :|P|)
+              (not (zerop (logand mods +control-key+))))
+         '(com-edit-up))
         ;; u/d: move track up/down
         ((eql char #\u)                    '(com-edit-move-up))
         ((eql char #\d)                    '(com-edit-move-down))
