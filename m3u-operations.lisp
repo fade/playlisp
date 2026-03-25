@@ -34,7 +34,7 @@
 Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
 
 (defun resmoother (list-of-tracks)
-  "set the qnumber for a list of track objects to reflect is position in the playlist."
+  "set the qnumber for a list of track objects to reflect its position in the playlist."
   (loop for track in list-of-tracks
         for index from 1
         do (setf (qnumber track) index)

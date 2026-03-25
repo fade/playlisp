@@ -74,8 +74,15 @@ written for dynamic playlist support in the Asteroid Radio project."))
                            :playlist-description description
                            :playlist-elements elements))
 
-;; (defmethod print-object (playlist playlist) (stream nil)
-;;   (with-open-file ))
+(defmethod print-object ((playlist playlist) stream)
+  (format stream
+          "#EXTM3U~%#PLAYLIST:~A~%#PHASE:~A~%#DURATION:~A~%#CURATOR:~A~%#DESCRIPTION:~A~2%~{~A~%~}~%"
+          (playlist-name playlist)
+          (playlist-phase playlist)
+          (playlist-duration playlist)
+          (playlist-curator playlist)
+          (playlist-description playlist)
+          (playlist-elements playlist)))
 
 (defclass track ()
   ((title :accessor title :initarg :title
@@ -91,6 +98,13 @@ written for dynamic playlist support in the Asteroid Radio project."))
             :documentation "The numeric position of the track within the represented playlist.")
    (runtime :accessor runtime :initarg :runtime :initform nil
             :documentation "The real-time length of this track.")))
+
+(defmethod print-object ((track track) stream)
+  (format stream
+          "EXTINF:~A,~A~%~A"
+          (runtime track)
+          (title track)
+          (track-path track)))
 
 (defun make-track (title path &key (artist nil) (runtime nil) (position nil))
   (make-instance 'track
