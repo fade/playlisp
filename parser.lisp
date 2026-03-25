@@ -76,7 +76,7 @@ written for dynamic playlist support in the Asteroid Radio project."))
 
 (defmethod print-object ((playlist playlist) stream)
   (format stream
-          "#EXTM3U~%#PLAYLIST:~A~%#PHASE:~A~%#DURATION:~A~%#CURATOR:~A~%#DESCRIPTION:~A~2%~{~A~%~}"
+          "#EXTM3U~%#PLAYLIST:~A~%#PHASE:~A~%#DURATION:~A~%#CURATOR:~A~%#DESCRIPTION:~A~2%~{~A~%~}~%"
           (playlist-name playlist)
           (playlist-phase playlist)
           (playlist-duration playlist)
