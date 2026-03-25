@@ -74,8 +74,17 @@ written for dynamic playlist support in the Asteroid Radio project."))
                            :playlist-description description
                            :playlist-elements elements))
 
-;; (defmethod print-object (playlist playlist) (stream nil)
-;;   (with-open-file ))
+(defmethod print-object ((playlist playlist) stream)
+  (print-unreadable-object (playlist stream :type t :identity t)
+    (format stream
+            "#EXTM3U~%#PLAYLIST:~A~%#PHASE:~A~%#DURATION:~A~%#CURATOR:~A~%#DESCRIPTION:~A~2%~{~A~%~}"
+            (playlist-name playlist)
+            (playlist-phase playlist)
+            (playlist-duration playlist)
+            (playlist-curator playlist)
+            (playlist-description playlist)
+            (playlist-elements playlist)
+            )))
 
 (defclass track ()
   ((title :accessor title :initarg :title
