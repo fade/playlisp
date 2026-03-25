@@ -1,18 +1,26 @@
 #EXTM3U
 #PLAYLIST:Playtest
 #PHASE:Circling Death
-#DURATION:25 minutes
+#DURATION:48 minutes
 #CURATOR:glenn
 #DESCRIPTION:A playlisp-mcclim test playlist
+#EXTINF:291,Vector Lovers/2005 - Capsule For One/01 - City Lights From A Train.mp3
+/home/glenn/SourceCode/asteroid/music/library/Vector Lovers/2005 - Capsule For One/01 - City Lights From A Train.mp3
 #EXTINF:315,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/01 - Bixby Canyon Bridge.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/01 - Bixby Canyon Bridge.flac
+#EXTINF:401,Vector Lovers/2005 - Capsule For One/06 - Post Arctic Industries.mp3
+/home/glenn/SourceCode/asteroid/music/library/Vector Lovers/2005 - Capsule For One/06 - Post Arctic Industries.mp3
 #EXTINF:119,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/06 - You Can Do Better Than Me.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/06 - You Can Do Better Than Me.flac
+#EXTINF:314,Vector Lovers/2005 - Capsule For One/08 - Empty Buildings, Falling Rain.mp3
+/home/glenn/SourceCode/asteroid/music/library/Vector Lovers/2005 - Capsule For One/08 - Empty Buildings, Falling Rain.mp3
+#EXTINF:398,Vector Lovers/2005 - Capsule For One/11 - Capsule For One.mp3
+/home/glenn/SourceCode/asteroid/music/library/Vector Lovers/2005 - Capsule For One/11 - Capsule For One.mp3
 #EXTINF:186,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/08 - Your New Twin Sized Bed.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/08 - Your New Twin Sized Bed.flac
-#EXTINF:160,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/03 - No Sunlight.flac
-/home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/03 - No Sunlight.flac
 #EXTINF:506,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/02 - I Will Possess Your Heart.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/02 - I Will Possess Your Heart.flac
+#EXTINF:160,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/03 - No Sunlight.flac
+/home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/03 - No Sunlight.flac
 #EXTINF:230,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/09 - Long Division.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/09 - Long Division.flac
