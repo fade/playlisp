@@ -16,7 +16,12 @@
   (:import-from #:playlisp/m3u-operations
                 #:find-track
                 #:delete-track
-                #:add-playlist-element)
+                #:add-playlist-element
+                #:write-m3u-file
+                #:configure-media-roots
+                #:host->target-path
+                #:*media-host-root*
+                #:*media-target-root*)
   (:shadowing-import-from #:parachute #:fail)
   (:shadowing-import-from #:parsector #:skip))
 
@@ -257,6 +262,93 @@
          (new-index (delete-track 99 pl)))
     (is = 2 new-index)
     (is = 3 (length (playlist-elements pl)))))
+
+(define-test media-root-rewriting-tests
+  :parent m3u-operations-tests
+  ;; configure-media-roots normalises trailing separators
+  (let ((*media-host-root* nil)
+        (*media-target-root* nil))
+    (configure-media-roots :host "/home/fade/Media/Music" :target "/app/music")
+    (is string= "/home/fade/Media/Music/" *media-host-root*)
+    (is string= "/app/music/" *media-target-root*))
+  ;; already-terminated roots are left alone
+  (let ((*media-host-root* nil)
+        (*media-target-root* nil))
+    (configure-media-roots :host "/a/" :target "/b/")
+    (is string= "/a/" *media-host-root*)
+    (is string= "/b/" *media-target-root*))
+  ;; pathname input is accepted
+  (let ((*media-host-root* nil)
+        (*media-target-root* nil))
+    (configure-media-roots :host #P"/home/fade/Media/Music/" :target #P"/app/music/")
+    (is string= "/home/fade/Media/Music/" *media-host-root*)
+    (is string= "/app/music/" *media-target-root*))
+  ;; basic rewrite
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/app/music/Zorn/01 - Sputnik.flac"
+        (host->target-path "/home/fade/Media/Music/Zorn/01 - Sputnik.flac")))
+  ;; path with spaces, parens, apostrophes survives verbatim
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/app/music/Zorn - The City's Collapsing (But Not Tonight) (2001 - CD - FLAC)/01 - Sputnik.flac"
+        (host->target-path
+         "/home/fade/Media/Music/Zorn - The City's Collapsing (But Not Tonight) (2001 - CD - FLAC)/01 - Sputnik.flac")))
+  ;; pathname input to host->target-path
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/app/music/foo.flac"
+        (host->target-path #P"/home/fade/Media/Music/foo.flac")))
+  ;; both roots unset: pass-through
+  (let ((*media-host-root* nil)
+        (*media-target-root* nil))
+    (is string= "/anything/at/all.flac"
+        (host->target-path "/anything/at/all.flac")))
+  ;; only one root set: pass-through (no partial rewrites)
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* nil))
+    (is string= "/home/fade/Media/Music/x.flac"
+        (host->target-path "/home/fade/Media/Music/x.flac")))
+  ;; stray path outside the host root: warn and pass through
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (let ((warned nil)
+          (result nil))
+      (handler-bind ((warning (lambda (w)
+                                (declare (ignore w))
+                                (setf warned t)
+                                (muffle-warning))))
+        (setf result (host->target-path "/tmp/outside.flac")))
+      (is eq t warned)
+      (is string= "/tmp/outside.flac" result)))
+  ;; write-m3u-file applies the rewrite end-to-end
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (pl (make-playlist "root-rewrite-test" :curator "test"))
+         (tmpfile (merge-pathnames
+                   (format nil "playlisp-root-rewrite-~A.m3u" (get-universal-time))
+                   (uiop:temporary-directory))))
+    (setf (add-playlist-element pl -1)
+          (make-track "Sputnik"
+                      "/home/fade/Media/Music/Zorn/01 - Sputnik.flac"
+                      :runtime 123))
+    (handler-bind ((warning #'muffle-warning))
+      (setf (add-playlist-element pl -1)
+            (make-track "Stray" "/tmp/outside-root.flac" :runtime 45))
+      (write-m3u-file pl tmpfile))
+    (unwind-protect
+         (let ((contents (uiop:read-file-string tmpfile)))
+           ;; in-root track was rewritten
+           (true (search "/app/music/Zorn/01 - Sputnik.flac" contents))
+           ;; stray track was left alone
+           (true (search "/tmp/outside-root.flac" contents))
+           ;; the host prefix is nowhere in the output
+           (false (search "/home/fade/Media/Music/" contents))
+           ;; track-path slot on the in-memory track was not mutated
+           (is string= "/home/fade/Media/Music/Zorn/01 - Sputnik.flac"
+               (track-path (first (playlist-elements pl)))))
+      (when (probe-file tmpfile)
+        (delete-file tmpfile)))))
 
 (define-test add-playlist-element-tests
   :parent m3u-operations-tests
