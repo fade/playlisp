@@ -18,7 +18,9 @@
    #:*media-host-root*
    #:*media-target-root*
    #:configure-media-roots
-   #:host->target-path))
+   #:host->target-path
+   #:target->host-path
+   #:normalize-playlist-paths))
 
 (in-package :playlisp/m3u-operations)
 
@@ -70,27 +72,76 @@ it.  Trailing separators are normalised so callers may supply either
     (setf *media-target-root* (%normalise-root target)))
   (values *media-host-root* *media-target-root*))
 
+(defun %coerce-path-string (path)
+  (etypecase path
+    (string path)
+    (pathname (namestring path))
+    (null "")))
+
 (defun host->target-path (path)
-  "Return PATH with *MEDIA-HOST-ROOT* rewritten to *MEDIA-TARGET-ROOT*.
-If either root is unset, PATH is returned unchanged.  If PATH does not
-begin with the host root, a warning is signalled and PATH is returned
-as-is so stray absolute paths do not crash serialisation."
-  (let ((path-str (etypecase path
-                    (string path)
-                    (pathname (namestring path))
-                    (null ""))))
+  "Return PATH rewritten so it is expressed relative to
+*MEDIA-TARGET-ROOT*.
+
+Rules, in order:
+  * If either root is unset, PATH is returned unchanged.
+  * If PATH already begins with *MEDIA-TARGET-ROOT*, it is returned
+    unchanged (idempotent; safe to call on already-target paths).
+  * If PATH begins with *MEDIA-HOST-ROOT*, that prefix is replaced with
+    *MEDIA-TARGET-ROOT*.
+  * Otherwise a warning is signalled and PATH is returned as-is so
+    stray absolute paths do not crash serialisation."
+  (let ((path-str (%coerce-path-string path)))
     (cond
       ((or (null *media-host-root*)
            (null *media-target-root*))
+       path-str)
+      ((alexandria:starts-with-subseq *media-target-root* path-str)
        path-str)
       ((alexandria:starts-with-subseq *media-host-root* path-str)
        (concatenate 'string
                     *media-target-root*
                     (subseq path-str (length *media-host-root*))))
       (t
-       (warn "host->target-path: ~S does not live under *media-host-root* ~S; passing through."
-             path-str *media-host-root*)
+       (warn "host->target-path: ~S lives under neither *media-host-root* ~S nor *media-target-root* ~S; passing through."
+             path-str *media-host-root* *media-target-root*)
        path-str))))
+
+(defun target->host-path (path)
+  "Return PATH rewritten so it is expressed relative to
+*MEDIA-HOST-ROOT*.  Inverse of HOST->TARGET-PATH and likewise
+idempotent: calling it on a path that is already host-relative returns
+the path unchanged.  Stray paths that live under neither root are
+returned with a warning."
+  (let ((path-str (%coerce-path-string path)))
+    (cond
+      ((or (null *media-host-root*)
+           (null *media-target-root*))
+       path-str)
+      ((alexandria:starts-with-subseq *media-host-root* path-str)
+       path-str)
+      ((alexandria:starts-with-subseq *media-target-root* path-str)
+       (concatenate 'string
+                    *media-host-root*
+                    (subseq path-str (length *media-target-root*))))
+      (t
+       (warn "target->host-path: ~S lives under neither *media-host-root* ~S nor *media-target-root* ~S; passing through."
+             path-str *media-host-root* *media-target-root*)
+       path-str))))
+
+(defun normalize-playlist-paths (playlist &key (to :host))
+  "Rewrite every track-path in PLAYLIST so it is expressed relative to
+the requested root.  TO is :HOST (default) or :TARGET.  Tracks already
+on the requested side of the rewrite are left alone; tracks on the
+other side are converted; stray paths trigger a warning and are left
+unchanged.  A playlist containing a mixture of host-rooted and
+target-rooted paths is therefore normalised in a single pass.  The
+playlist is mutated and returned."
+  (let ((rewriter (ecase to
+                    (:host   #'target->host-path)
+                    (:target #'host->target-path))))
+    (dolist (track (playlist-elements playlist))
+      (setf (track-path track) (funcall rewriter (track-path track)))))
+  playlist)
 
 ;;; create a new playlist
 

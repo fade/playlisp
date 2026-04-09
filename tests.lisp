@@ -20,6 +20,8 @@
                 #:write-m3u-file
                 #:configure-media-roots
                 #:host->target-path
+                #:target->host-path
+                #:normalize-playlist-paths
                 #:*media-host-root*
                 #:*media-target-root*)
   (:shadowing-import-from #:parachute #:fail)
@@ -349,6 +351,127 @@
                (track-path (first (playlist-elements pl)))))
       (when (probe-file tmpfile)
         (delete-file tmpfile)))))
+
+(define-test media-root-bidirectional-tests
+  :parent m3u-operations-tests
+  ;; host->target is idempotent: an already-target path passes through
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/app/music/Zorn/01 - Sputnik.flac"
+        (host->target-path "/app/music/Zorn/01 - Sputnik.flac")))
+  ;; target->host basic rewrite
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/home/fade/Media/Music/Zorn/01 - Sputnik.flac"
+        (target->host-path "/app/music/Zorn/01 - Sputnik.flac")))
+  ;; target->host preserves spaces, parens, apostrophes
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/home/fade/Media/Music/Zorn - The City's Collapsing (But Not Tonight) (2001 - CD - FLAC)/01 - Sputnik.flac"
+        (target->host-path
+         "/app/music/Zorn - The City's Collapsing (But Not Tonight) (2001 - CD - FLAC)/01 - Sputnik.flac")))
+  ;; target->host is idempotent on already-host paths
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/home/fade/Media/Music/foo.flac"
+        (target->host-path "/home/fade/Media/Music/foo.flac")))
+  ;; round-trip: host -> target -> host returns the original
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (original "/home/fade/Media/Music/Zorn/01 - Sputnik.flac"))
+    (is string= original (target->host-path (host->target-path original))))
+  ;; round-trip the other direction: target -> host -> target
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (original "/app/music/Zorn/01 - Sputnik.flac"))
+    (is string= original (host->target-path (target->host-path original))))
+  ;; pathname input to target->host
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (is string= "/home/fade/Media/Music/foo.flac"
+        (target->host-path #P"/app/music/foo.flac")))
+  ;; both roots unset: pass-through
+  (let ((*media-host-root* nil)
+        (*media-target-root* nil))
+    (is string= "/a/b.flac" (target->host-path "/a/b.flac")))
+  ;; stray path: warn and pass through
+  (let ((*media-host-root* "/home/fade/Media/Music/")
+        (*media-target-root* "/app/music/"))
+    (let ((warned nil)
+          (result nil))
+      (handler-bind ((warning (lambda (w)
+                                (declare (ignore w))
+                                (setf warned t)
+                                (muffle-warning))))
+        (setf result (target->host-path "/srv/other/x.flac")))
+      (is eq t warned)
+      (is string= "/srv/other/x.flac" result))))
+
+(define-test normalize-playlist-paths-tests
+  :parent m3u-operations-tests
+  ;; Mixed-root playlist, normalise to host
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (pl (make-playlist "mixed"
+                            :elements
+                            (list
+                             ;; already host
+                             (make-track "A" "/home/fade/Media/Music/a.flac" :runtime 10)
+                             ;; target, needs rewriting
+                             (make-track "B" "/app/music/b.flac" :runtime 20)
+                             ;; target with spaces
+                             (make-track "C" "/app/music/Zorn - The City's Collapsing/01 - Sputnik.flac" :runtime 30)))))
+    (normalize-playlist-paths pl :to :host)
+    (is string= "/home/fade/Media/Music/a.flac"
+        (track-path (first (playlist-elements pl))))
+    (is string= "/home/fade/Media/Music/b.flac"
+        (track-path (second (playlist-elements pl))))
+    (is string= "/home/fade/Media/Music/Zorn - The City's Collapsing/01 - Sputnik.flac"
+        (track-path (third (playlist-elements pl)))))
+  ;; Mixed-root playlist, normalise to target
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (pl (make-playlist "mixed"
+                            :elements
+                            (list
+                             (make-track "A" "/home/fade/Media/Music/a.flac" :runtime 10)
+                             (make-track "B" "/app/music/b.flac" :runtime 20)))))
+    (normalize-playlist-paths pl :to :target)
+    (is string= "/app/music/a.flac"
+        (track-path (first (playlist-elements pl))))
+    (is string= "/app/music/b.flac"
+        (track-path (second (playlist-elements pl)))))
+  ;; normalise-playlist-paths returns the playlist
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (pl (make-playlist "x"
+                            :elements (list (make-track "A" "/app/music/a.flac")))))
+    (is eq pl (normalize-playlist-paths pl :to :host)))
+  ;; Stray paths are left in place with a warning; in-root paths still rewritten
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (pl (make-playlist "stray"
+                            :elements
+                            (list (make-track "A" "/app/music/a.flac" :runtime 10)
+                                  (make-track "B" "/tmp/elsewhere.flac" :runtime 20)))))
+    (handler-bind ((warning #'muffle-warning))
+      (normalize-playlist-paths pl :to :host))
+    (is string= "/home/fade/Media/Music/a.flac"
+        (track-path (first (playlist-elements pl))))
+    (is string= "/tmp/elsewhere.flac"
+        (track-path (second (playlist-elements pl)))))
+  ;; Reading a container-authored m3u and normalising to host
+  (let* ((*media-host-root* "/home/fade/Media/Music/")
+         (*media-target-root* "/app/music/")
+         (pl (parse-m3u
+              (format nil "#EXTM3U~%#PLAYLIST:ctr~%~
+                           #EXTINF:120,Track One~%/app/music/one.flac~%~
+                           #EXTINF:240,Track Two~%/app/music/two.flac~%"))))
+    (normalize-playlist-paths pl :to :host)
+    (is string= "/home/fade/Media/Music/one.flac"
+        (track-path (first (playlist-elements pl))))
+    (is string= "/home/fade/Media/Music/two.flac"
+        (track-path (second (playlist-elements pl))))))
 
 (define-test add-playlist-element-tests
   :parent m3u-operations-tests
