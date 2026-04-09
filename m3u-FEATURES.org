@@ -4,7 +4,7 @@
 
 * playlisp m3u editor features
 -  Add/remove tracks. Reordering with auyo-renumbering. Edit meta data? Music library browser.
--  Ohase/section support. Duration calculation. Path validation? Taglib integration maybe?
+-  Phase/section support. Duration calculation. Path validation? Taglib integration maybe?
 -  And some nice to haves I've thought about when putting playlists together
 -  Duplicate detection. Preview playback, just a few seconds of start/end of tracks. Shuffle/sort. Import an entire directory. A diff view could be useful
--  S/Ohase/Phase
+

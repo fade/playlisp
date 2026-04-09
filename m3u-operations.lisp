@@ -1,28 +1,183 @@
 ;;; m3u-operations.lisp - functions to maniuplate playlist objects
 
 (uiop:define-package #:playlisp/m3u-operations
-  (:use #:cl #:rutils)
+  (:use #:cl #:alexandria)
+  (:local-nicknames (:a :alexandria))
+  (:import-from #:parse-number #:parse-number)
   (:use-reexport #:playlisp/parser)
-  (:nicknames :m3uop))
+  (:nicknames :m3uop)
+  (:export
+   #:add-playlist-element
+   #:find-track
+   #:get-audio-duration
+   #:make-track-from-file
+   #:write-m3u-file
+   #:move-track-up
+   #:move-track-down
+   #:delete-track))
 
 (in-package :playlisp/m3u-operations)
 
-;; ;;; create a new playlist
+;;; create a new playlist
 
 (defun read-playlist (playlist-path)
-  "Read a playlist from PLAYLIST-PATH and return an instance of 'playlist/parser:PLAYLIST"
-  (playlisp:parse-m3u-file playlist-path))
+  "Read a playlist from PLAYLIST-PATH and return an instance of playlist/parser:PLAYLIST"
+  (parse-m3u-file playlist-path))
 
-;; ;;; add a track to a playlist
+;;; playlist element sanitizers
 
-;; (defgeneric (setf add-playlist-element) (new-track playlist)
-;;   (:documentation "Setter for playlist-elements"))
 
-;; (defmethod (setf add-playlist-element) (new-track (playlist playlist/parser:playlist))
-;;   (setf (append (playlist-elements playlist) (list new-track))))
+;;; add a track to a playlist, in whatever position.. begin, end, middle.
 
-;; ;;; move a track within a playlist
+(defgeneric (setf add-playlist-element) (new-track playlist position)
+  (:documentation "Setter for playlist-elements. 
+Ex: (setf (add-playlist-element *playlist* 4) *track*)"))
 
-;; ;;; delete a track from a playlist
+(defun resmoother (list-of-tracks)
+  "set the qnumber for a list of track objects to reflect its position in the playlist."
+  (loop for track in list-of-tracks
+        for index from 1
+        do (setf (qnumber track) index)
+        finally (return list-of-tracks)))
 
-;; ;;; reify a playlist into an m3u file for external consumption
+(defmethod (setf add-playlist-element) ((new-track track) (playlist playlist) (index number))
+  "given an instance of 'PLAYLIST, insert NEW-TRACK an instance of 'TRACK  at the
+   INDEX of its elements slot.
+
+   Called: (setf (add-playlist-element *playlist* 4) *track*) inserts
+   *track* into the logical fourth position of the playlist-elements
+   list."
+  (let* ((elements (playlist-elements playlist))
+         (index (if (>= index 0) ;; if it's not negative, normalize it. Otherwise just return it.
+                    (1- index)
+                    index)))
+    (cond ((= index -1)
+           (setf (playlist-elements playlist) (append elements (list new-track))))
+          ((= index 0) ;; front of list
+           (setf (playlist-elements playlist) (append (list new-track) elements)))
+          (t
+           (setf (playlist-elements playlist) (append (subseq elements 0 index)
+                                                      (list new-track)
+                                                      (nthcdr index elements)))))))
+
+(defmethod (setf add-playlist-element) :after ((new-track track) (playlist playlist) (index number))
+  "after all the setting is done, zip down the list setting each track's
+qnumber relative to its position in the list."
+  (setf (playlist-elements playlist)
+        (resmoother (playlist-elements playlist))))
+
+;;; ── Audio file metadata ───────────────────────────────────────────
+
+(defun get-audio-duration (filepath)
+  "Get duration in seconds from an audio file using ffprobe. Returns NIL on error."
+  (handler-case
+      (let* ((path-str (etypecase filepath
+                         (string filepath)
+                         (pathname (sb-ext:native-namestring filepath))))
+             (cmd (format nil "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ~S"
+                          path-str))
+             (output (string-trim '(#\Space #\Newline #\Return)
+                                  (uiop:run-program cmd :output :string :ignore-error-status t))))
+        (when (and output (> (length output) 0))
+          (let ((duration (ignore-errors (parse-number:parse-number output))))
+            (when (and duration (numberp duration))
+              (round duration)))))
+    (error () nil)))
+
+(defun make-track-from-file (filepath &key title)
+  "Create a track from an audio file, reading duration via ffprobe.
+   If TITLE is not provided, uses the filename."
+  (let ((duration (get-audio-duration filepath))
+        (name (or title (file-namestring filepath))))
+    (make-track name filepath :runtime (or duration -1))))
+
+;;; find a track within a playlist
+
+(defun find-track (playlist key &key (by :title))
+  "Find the first track in PLAYLIST whose field designated by BY matches KEY.
+BY may be :title, :artist, or :qnumber.
+String comparisons are case-insensitive. Returns the matching track or NIL."
+  (find key (playlist-elements playlist)
+        :key (ecase by
+               (:title   #'title)
+               (:artist  #'artist)
+               (:qnumber #'qnumber))
+        :test (if (eq by :qnumber)
+                  #'eql
+                  (lambda (k field) (string-equal k (or field ""))))))
+
+;;; remove a track from a playlist
+
+(defgeneric delete-track (track playlist)
+  (:documentation "Remove a track from the playlist-elements list in a playlist object"))
+
+(defmethod delete-track ((track track) (playlist playlist))
+  "Remove TRACK from PLAYLIST by identity, then renumber the remaining tracks."
+  (setf (playlist-elements playlist)
+        (resmoother (remove track (playlist-elements playlist) :test #'eq)))
+  playlist)
+
+(defmethod delete-track ((index number) (playlist playlist))
+  "Remove track at INDEX from PLAYLIST. Returns new cursor index."
+  (let ((tracks (playlist-elements playlist)))
+    (when (and tracks (< index (length tracks)))
+      (setf (playlist-elements playlist)
+            (resmoother (append (subseq tracks 0 index)
+                                (nthcdr (1+ index) tracks)))))
+    (min index (max 0 (1- (length (playlist-elements playlist)))))))
+
+;;; ── Track reordering and deletion ───────────────────────────────
+
+(defun move-track-up (playlist index)
+  "Swap track at INDEX with the one above it. Returns new index, or INDEX if at top."
+  (let ((tracks (playlist-elements playlist)))
+    (when (and tracks (> index 0) (< index (length tracks)))
+      (rotatef (nth index tracks) (nth (1- index) tracks))
+      (setf (playlist-elements playlist) (resmoother tracks))
+      (return-from move-track-up (1- index))))
+  index)
+
+(defun move-track-down (playlist index)
+  "Swap track at INDEX with the one below it. Returns new index, or INDEX if at bottom."
+  (let ((tracks (playlist-elements playlist)))
+    (when (and tracks (< index (1- (length tracks))))
+      (rotatef (nth index tracks) (nth (1+ index) tracks))
+      (setf (playlist-elements playlist) (resmoother tracks))
+      (return-from move-track-down (1+ index))))
+  index)
+
+;; (defun delete-track (playlist index)
+;;   "Remove track at INDEX from PLAYLIST. Returns new cursor index."
+;;   (let ((tracks (playlist-elements playlist)))
+;;     (when (and tracks (< index (length tracks)))
+;;       (setf (playlist-elements playlist)
+;;             (resmoother (append (subseq tracks 0 index)
+;;                                 (nthcdr (1+ index) tracks)))))
+;;     (min index (max 0 (1- (length (playlist-elements playlist)))))))
+
+;;; ── Write playlist to M3U file ──────────────────────────────────
+
+(defun write-m3u-file (playlist filepath)
+  "Write PLAYLIST to FILEPATH in extended M3U format."
+  (with-open-file (out filepath :direction :output
+                                :if-exists :supersede
+                                :if-does-not-exist :create
+                                :external-format :utf-8)
+    (format out "#EXTM3U~%")
+    ;; Metadata headers
+    (when (playlist-name playlist)
+      (format out "#PLAYLIST:~A~%" (playlist-name playlist)))
+    (when (playlist-phase playlist)
+      (format out "#PHASE:~A~%" (playlist-phase playlist)))
+    (when (playlist-duration playlist)
+      (format out "#DURATION:~A~%" (playlist-duration playlist)))
+    (when (playlist-curator playlist)
+      (format out "#CURATOR:~A~%" (playlist-curator playlist)))
+    (when (playlist-description playlist)
+      (format out "#DESCRIPTION:~A~%" (playlist-description playlist)))
+    ;; Tracks
+    (dolist (track (playlist-elements playlist))
+      (format out "#EXTINF:~A,~A~%"
+              (or (runtime track) -1)
+              (or (title track) ""))
+      (format out "~A~%" (or (track-path track) "")))))
