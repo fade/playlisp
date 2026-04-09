@@ -14,9 +14,83 @@
    #:write-m3u-file
    #:move-track-up
    #:move-track-down
-   #:delete-track))
+   #:delete-track
+   #:*media-host-root*
+   #:*media-target-root*
+   #:configure-media-roots
+   #:host->target-path))
 
 (in-package :playlisp/m3u-operations)
+
+;;; ── Media root rewriting ────────────────────────────────────────
+;;;
+;;; playlisp is used as both an editing tool on a developer workstation
+;;; and as a library that feeds playlists to services running elsewhere
+;;; (for example, an Icecast/Liquidsoap rig running in a container that
+;;; mounts the music library at a different path).  Track objects carry
+;;; the *host* path in their track-path slot -- the path that works on
+;;; the machine actually reading the files -- and on serialisation the
+;;; host prefix is swapped for the target (container) prefix.  Both
+;;; roots are tunable so the same code can serve arbitrary deployments.
+
+(defvar *media-host-root* nil
+  "Directory prefix that track-path slots are expected to live under on
+the machine running playlisp.  When NIL, no rewriting is performed and
+paths are written to m3u files verbatim.  Trailing separator is
+normalised by CONFIGURE-MEDIA-ROOTS.")
+
+(defvar *media-target-root* nil
+  "Directory prefix that should replace *MEDIA-HOST-ROOT* when a
+playlist is serialised to an m3u file.  When NIL, no rewriting is
+performed.  Typically this is the path at which the host media tree is
+mounted inside the consuming environment (e.g. \"/app/music/\" in a
+container).")
+
+(defun %normalise-root (root)
+  "Return ROOT as a string that ends in a single #\\/ separator, or NIL
+if ROOT is NIL."
+  (when root
+    (let ((s (etypecase root
+               (string root)
+               (pathname (namestring root)))))
+      (if (and (plusp (length s))
+               (char= (char s (1- (length s))) #\/))
+          s
+          (concatenate 'string s "/")))))
+
+(defun configure-media-roots (&key host target)
+  "Set *MEDIA-HOST-ROOT* and *MEDIA-TARGET-ROOT* for the current
+session.  Either keyword may be omitted, in which case the
+corresponding root is left unchanged; passing an explicit NIL clears
+it.  Trailing separators are normalised so callers may supply either
+\"/foo\" or \"/foo/\"."
+  (when host
+    (setf *media-host-root* (%normalise-root host)))
+  (when target
+    (setf *media-target-root* (%normalise-root target)))
+  (values *media-host-root* *media-target-root*))
+
+(defun host->target-path (path)
+  "Return PATH with *MEDIA-HOST-ROOT* rewritten to *MEDIA-TARGET-ROOT*.
+If either root is unset, PATH is returned unchanged.  If PATH does not
+begin with the host root, a warning is signalled and PATH is returned
+as-is so stray absolute paths do not crash serialisation."
+  (let ((path-str (etypecase path
+                    (string path)
+                    (pathname (namestring path))
+                    (null ""))))
+    (cond
+      ((or (null *media-host-root*)
+           (null *media-target-root*))
+       path-str)
+      ((alexandria:starts-with-subseq *media-host-root* path-str)
+       (concatenate 'string
+                    *media-target-root*
+                    (subseq path-str (length *media-host-root*))))
+      (t
+       (warn "host->target-path: ~S does not live under *media-host-root* ~S; passing through."
+             path-str *media-host-root*)
+       path-str))))
 
 ;;; create a new playlist
 
@@ -180,4 +254,4 @@ String comparisons are case-insensitive. Returns the matching track or NIL."
       (format out "#EXTINF:~A,~A~%"
               (or (runtime track) -1)
               (or (title track) ""))
-      (format out "~A~%" (or (track-path track) "")))))
+      (format out "~A~%" (host->target-path (or (track-path track) ""))))))
