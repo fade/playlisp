@@ -214,7 +214,7 @@
 
 (defun format-duration (seconds)
   "Format duration in seconds as MM:SS or HH:MM:SS."
-  (if (null seconds)
+  (if (or (null seconds) (< seconds 0))
       "--:--"
       (let* ((s (round seconds))
              (h (floor s 3600))
@@ -326,7 +326,7 @@
     (terpri pane)
     (with-drawing-options (pane :ink border-ink)
       (format pane "~A~%" (make-string (min cols 80) :initial-element #\─)))
-    ;; Track list — paginated to fit pane
+    ;; Track list - paginated to fit pane
     (if (null tracks)
         (progn
           (terpri pane)
@@ -482,7 +482,7 @@
         (format stream "──────────────────────────────────────────────────~%"))
       (with-drawing-options (stream :ink +gray50+)
         (format stream " ↑↓/C-n C-p:nav  Enter:open  Space:star  a:add  Bksp:up  Esc:close~%"))
-      ;; Entries — show a scrolling window that keeps the cursor visible.
+      ;; Entries - show a scrolling window that keeps the cursor visible.
       ;; 3 header lines + 2 summary lines = 5 overhead lines.
       (let* ((vp (when (and port (typep port 'clim-charmed::charmed-port))
                    (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
@@ -855,8 +855,20 @@
           (setf (frame-playlist frame) playlist
                 (frame-filepath frame) (namestring (truename path))
                 (frame-selected-index frame) 0
-                (frame-message frame) 
-                (format nil "Loaded ~A" (file-namestring path))))
+                (frame-message frame)
+                (format nil "Loading ~A - probing durations..." (file-namestring path)))
+          (redisplay-frame-panes frame)
+          ;; Auto-probe durations for tracks with unknown runtime
+          (let ((updated 0))
+            (dolist (track (playlist-elements playlist))
+              (when (or (null (runtime track)) (< (runtime track) 0))
+                (let ((duration (get-audio-duration (track-path track))))
+                  (when duration
+                    (setf (runtime track) duration)
+                    (incf updated)))))
+            (compute-playlist-duration playlist)
+            (setf (frame-message frame)
+                  (format nil "Loaded ~A (~D durations probed)" (file-namestring path) updated))))
       (error (e)
         (setf (frame-message frame) 
               (format nil "Load error: ~A" e))))
@@ -1026,20 +1038,26 @@
   (when (frame-browse-mode-p *application-frame*)
     (exit-browse-mode *application-frame*)))
 
-;; Refresh duration for selected track using ffprobe
+;; Refresh duration for all tracks with missing/unknown durations using ffprobe
 (define-playlisp-editor-command (com-refresh-duration :name "Refresh Duration" :keystroke (#\r :control))
     ()
   (let* ((frame *application-frame*)
-         (track (frame-selected-track frame)))
-    (when track
-      (let ((duration (get-audio-duration (track-path track))))
-        (when duration
-          (setf (runtime track) duration)
-          (setf (frame-message frame) 
-                (format nil "Duration: ~A" (format-duration duration)))
-          (redisplay-frame-panes frame))))))
+         (playlist (frame-playlist frame))
+         (tracks (when playlist (playlist-elements playlist)))
+         (updated 0))
+    (dolist (track tracks)
+      (when (or (null (runtime track)) (< (runtime track) 0))
+        (let ((duration (get-audio-duration (track-path track))))
+          (when duration
+            (setf (runtime track) duration)
+            (incf updated)))))
+    (when playlist
+      (compute-playlist-duration playlist))
+    (setf (frame-message frame)
+          (format nil "Refreshed ~D track~:P" updated))
+    (redisplay-frame-panes frame)))
 
-;; Help — clear interactor then print help so prompt stays accessible
+;; Help - clear interactor then print help so prompt stays accessible
 (define-playlisp-editor-command (com-help :name "Help")
     ()
   (let* ((frame *application-frame*)
@@ -1189,7 +1207,14 @@
              (handler-case
                  (let ((playlist (parse-m3u-file filepath)))
                    (setf (frame-playlist frame) playlist
-                         (frame-filepath frame) (namestring (truename filepath))))
+                         (frame-filepath frame) (namestring (truename filepath)))
+                   ;; Auto-probe durations for tracks with unknown runtime
+                   (dolist (track (playlist-elements playlist))
+                     (when (or (null (runtime track)) (< (runtime track) 0))
+                       (let ((duration (get-audio-duration (track-path track))))
+                         (when duration
+                           (setf (runtime track) duration)))))
+                   (compute-playlist-duration playlist))
                (error (e)
                  (setf (frame-message frame) 
                        (format nil "Load error: ~A" e)))))
