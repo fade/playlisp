@@ -71,8 +71,11 @@ qnumber relative to its position in the list."
 (defun get-audio-duration (filepath)
   "Get duration in seconds from an audio file using ffprobe. Returns NIL on error."
   (handler-case
-      (let* ((cmd (format nil "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ~S"
-                          (namestring filepath)))
+      (let* ((path-str (etypecase filepath
+                         (string filepath)
+                         (pathname (sb-ext:native-namestring filepath))))
+             (cmd (format nil "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ~S"
+                          path-str))
              (output (string-trim '(#\Space #\Newline #\Return)
                                   (uiop:run-program cmd :output :string :ignore-error-status t))))
         (when (and output (> (length output) 0))
