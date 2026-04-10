@@ -57,7 +57,7 @@ if ROOT is NIL."
                (pathname (namestring root)))))
       (if (and (plusp (length s))
                (char= (char s (1- (length s))) #\/))
-          s
+          (values s)
           (concatenate 'string s "/")))))
 
 (defun configure-media-roots (&key host target)
