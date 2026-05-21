@@ -1,9 +1,19 @@
 #EXTM3U
 #PLAYLIST:Playtest
 #PHASE:Circling Death
-#DURATION:48 minutes
+#DURATION:1 hour 30 minutes
 #CURATOR:glenn
 #DESCRIPTION:A playlisp-mcclim test playlist
+#EXTINF:278,2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/01 Kiss Them For Me.flac
+/home/fade/Media/Music/2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/01 Kiss Them For Me.flac
+#EXTINF:285,2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/04 Drifter.flac
+/home/fade/Media/Music/2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/04 Drifter.flac
+#EXTINF:282,2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/07 Silly Thing.flac
+/home/fade/Media/Music/2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/07 Silly Thing.flac
+#EXTINF:264,2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/09 Silver Waterfalls.flac
+/home/fade/Media/Music/2016 Siouxsie And The Banshees (Classic Album Selection Volume Two)/1991 Superstition/09 Silver Waterfalls.flac
+#EXTINF:384,Dead Voices On Air - DVoA-CzE (FLAC)/04 - Splet Envy-Madagascar.flac
+/home/fade/Media/Music/Dead Voices On Air - DVoA-CzE (FLAC)/04 - Splet Envy-Madagascar.flac
 #EXTINF:291,Vector Lovers/2005 - Capsule For One/01 - City Lights From A Train.mp3
 /home/glenn/SourceCode/asteroid/music/library/Vector Lovers/2005 - Capsule For One/01 - City Lights From A Train.mp3
 #EXTINF:315,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/01 - Bixby Canyon Bridge.flac
@@ -18,8 +28,12 @@
 /home/glenn/SourceCode/asteroid/music/library/Vector Lovers/2005 - Capsule For One/11 - Capsule For One.mp3
 #EXTINF:186,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/08 - Your New Twin Sized Bed.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/08 - Your New Twin Sized Bed.flac
+#EXTINF:253,Dead Voices On Air - DVoA-CzE (FLAC)/05 - PJB.flac
+/home/fade/Media/Music/Dead Voices On Air - DVoA-CzE (FLAC)/05 - PJB.flac
 #EXTINF:506,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/02 - I Will Possess Your Heart.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/02 - I Will Possess Your Heart.flac
+#EXTINF:743,Dead Voices On Air - DVoA-CzE (FLAC)/06 - FFET.flac
+/home/fade/Media/Music/Dead Voices On Air - DVoA-CzE (FLAC)/06 - FFET.flac
 #EXTINF:160,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/03 - No Sunlight.flac
 /home/glenn/SourceCode/asteroid/music/library/Death Cab for Cutie - Narrow Stairs [Atlantic Records]/03 - No Sunlight.flac
 #EXTINF:230,Death Cab for Cutie - Narrow Stairs [Atlantic Records]/09 - Long Division.flac

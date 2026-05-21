@@ -18,3 +18,5 @@
 /slime.lisp
 /quicklisp-manifest.txt
 /buildapp
+.vorg.db
+bin/

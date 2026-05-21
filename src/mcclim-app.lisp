@@ -144,7 +144,7 @@
 
 (define-application-frame playlisp-editor ()
   ((playlist :initform nil :accessor frame-playlist)
-   (filepath :initform nil :accessor frame-filepath)
+   (filepath :initarg :filepath :initform nil :accessor frame-filepath)
    (selected-index :initform 0 :accessor frame-selected-index)
    (message :initform nil :accessor frame-message)
    ;; Browser state
@@ -172,7 +172,7 @@
       (9/20 tracklist)
       (3/20 details)
       (2/5 interactor))))
-  (:top-level (default-frame-top-level :prompt 'print-prompt))
+  (:top-level (clim-charmed:charmed-frame-top-level :prompt 'print-prompt))
   (:command-table (playlisp-editor
                    :inherit-from ())))
 
@@ -483,10 +483,11 @@
       (with-drawing-options (stream :ink +gray50+)
         (format stream " ↑↓/C-n C-p:nav  Enter:open  Space:star  a:add  Bksp:up  Esc:close~%"))
       ;; Entries - show a scrolling window that keeps the cursor visible.
-      ;; 3 header lines + 2 summary lines = 5 overhead lines.
+      ;; Overhead: header(1) + separator(1) + help(1) + scroll-up(1)
+      ;; + scroll-down(1) + blank(1) + summary(1) + top-gap(~3) = 10
       (let* ((vp (when (and port (typep port 'clim-charmed::charmed-port))
                    (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
-             (viewport-lines (if vp (max 1 (- (round (fourth vp)) 5)) 20))
+             (viewport-lines (if vp (max 1 (- (round (fourth vp)) 10)) 20))
              (n (length entries))
              (scroll (frame-browser-scroll frame))
              ;; Adjust scroll to keep cursor visible
@@ -913,8 +914,19 @@
 
 ;; Browse: enter interactive browser mode
 (define-playlisp-editor-command (com-browse :name "Browse")
-    ((dir 'pathname :prompt "Directory"))
-  (enter-browse-mode *application-frame* dir))
+    ()
+  (%log "COM-BROWSE called")
+  (let* ((frame *application-frame*)
+         (stream (or (get-frame-pane frame 'interactor)
+                     (frame-standard-input frame)))
+         (port (port (frame-manager frame))))
+    (%log (format nil "COM-BROWSE stream=~S port=~S" stream port))
+    ;; Use charmed-read-line which bypasses DREI and echoes directly
+    (let ((dir-str (clim-charmed:charmed-read-line
+                    port stream :prompt "Directory: ")))
+      (%log (format nil "COM-BROWSE dir-str=~S" dir-str))
+      (when (and dir-str (> (length dir-str) 0))
+        (enter-browse-mode frame (pathname dir-str))))))
 
 ;; Browser navigation commands (active in browse mode)
 (define-playlisp-editor-command (com-browser-down :name "Nav Down")
@@ -1168,17 +1180,24 @@
   (declare (ignore stream))
   (cond
     ((or (frame-browse-mode-p frame) (frame-edit-mode-p frame))
-     (let ((queue (climi::frame-event-queue frame))
-           (browse-p (frame-browse-mode-p frame)))
+     (let* ((port (port (frame-manager frame)))
+            (queue (climi::frame-event-queue frame))
+            (browse-p (frame-browse-mode-p frame)))
+       ;; The frame's event queue is a concurrent-queue (on SBCL).
+       ;; We must call process-next-event to pump terminal input, then
+       ;; check if raw-key events arrived in the frame queue.
        (loop
-         (let ((event (climi::queue-read queue)))
-           (when (typep event 'key-press-event)
+         (process-next-event port :timeout nil)
+         (let ((event (climi::queue-read-no-hang queue)))
+           (when (and event (typep event 'key-press-event))
              (let* ((key-name (keyboard-event-key-name event))
                     (char (keyboard-event-character event))
                     (mods (event-modifier-state event))
                     (cmd (if browse-p
                              (dispatch-browse-key key-name char mods)
                              (dispatch-edit-key key-name char mods))))
+               (%log (format nil "RAW-KEY mode=~A key=~S char=~S mods=~D cmd=~S"
+                             (if browse-p :browse :edit) key-name char mods cmd))
                (when cmd (return cmd))))))))
     (t (call-next-method))))
 
@@ -1187,21 +1206,50 @@
 (defmethod frame-standard-output ((frame playlisp-editor))
   (get-frame-pane frame 'interactor))
 
+;;; ── Diagnostics (TEMPORARY) ──────────────────────────────────────────
+
+(defun %log (msg)
+  (with-open-file (s "/tmp/charmed-diag.log"
+                     :direction :output
+                     :if-exists :append
+                     :if-does-not-exist :create)
+    (format s "~A ~A~%" (get-internal-real-time) msg)
+    (finish-output s)))
+
+(defmethod clim:enable-frame :around ((frame playlisp-editor))
+  (%log "ENABLE-FRAME :around enter")
+  (call-next-method)
+  (%log "ENABLE-FRAME :around exit"))
+
+(defmethod clim:frame-query-io :around ((frame playlisp-editor))
+  (%log "FRAME-QUERY-IO called")
+  (let ((input (slot-value frame 'climi::input-pane)))
+    (%log (format nil "FRAME-QUERY-IO slot input-pane=~S" input))
+    (if input
+        (progn (%log "FRAME-QUERY-IO returning input-pane") input)
+        (let ((output (slot-value frame 'climi::output-pane)))
+          (%log (format nil "FRAME-QUERY-IO slot output-pane=~S" output))
+          (if output
+              (progn (%log "FRAME-QUERY-IO returning output-pane") output)
+              (progn (%log "FRAME-QUERY-IO both nil, calling next method")
+                     (call-next-method)))))))
+
+(defmethod run-frame-top-level :around ((frame playlisp-editor) &key &allow-other-keys)
+  (%log "RUN-FRAME-TOP-LEVEL :around (playlisp) ENTER")
+  (unwind-protect
+       (call-next-method)
+    (%log "RUN-FRAME-TOP-LEVEL :around (playlisp) EXIT")))
+
 ;;; ── Entry Point ──────────────────────────────────────────────────────
 
 (defun run (&optional filepath)
   "Launch the playlisp McCLIM TUI editor.
    If FILEPATH is given, load the M3U playlist from that path."
-  (let* ((port (make-instance 'clim-charmed::charmed-port
-                              :server-path '(:charmed)))
-         (fm (first (slot-value port 'climi::frame-managers)))
-         (event-queue (make-instance 'climi::simple-queue :port port))
-         (input-buffer (make-instance 'climi::simple-queue :port port)))
+  (let* ((port (clim:find-port :server-path '(:charmed)))
+         (fm (find-frame-manager :port port)))
     (unwind-protect
          (let ((frame (make-application-frame 'playlisp-editor
-                                              :frame-manager fm
-                                              :frame-event-queue event-queue
-                                              :frame-input-buffer input-buffer)))
+                                              :frame-manager fm)))
            ;; Load playlist if given
            (when filepath
              (handler-case
@@ -1216,13 +1264,33 @@
                            (setf (runtime track) duration)))))
                    (compute-playlist-duration playlist))
                (error (e)
-                 (setf (frame-message frame) 
+                 (setf (frame-message frame)
                        (format nil "Load error: ~A" e)))))
            ;; Default to empty playlist
            (unless (frame-playlist frame)
              (setf (frame-playlist frame) (make-playlist "Untitled")))
-           ;; Run
-           (run-frame-top-level frame))
-      (climi::destroy-port port)))
-  ;; Exit cleanly after frame closes
+           ;; Run (with diagnostics)
+           (with-open-file (s "/tmp/charmed-diag.log"
+                              :direction :output
+                              :if-exists :append
+                              :if-does-not-exist :create)
+             (format s "PRE-RUN state=~S~%" (clim:frame-state frame))
+             (finish-output s))
+           (handler-case
+               (progn
+                 (run-frame-top-level frame)
+                 (with-open-file (s "/tmp/charmed-diag.log"
+                                    :direction :output
+                                    :if-exists :append
+                                    :if-does-not-exist :create)
+                   (format s "POST-RUN returned normally~%")
+                   (finish-output s)))
+             (serious-condition (e)
+               (with-open-file (s "/tmp/charmed-diag.log"
+                                  :direction :output
+                                  :if-exists :append
+                                  :if-does-not-exist :create)
+                 (format s "RUN-CONDITION ~S: ~A~%" (type-of e) e)
+                 (finish-output s)))))
+      (destroy-port port)))
   (uiop:quit 0))
