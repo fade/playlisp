@@ -483,10 +483,11 @@
       (with-drawing-options (stream :ink +gray50+)
         (format stream " ↑↓/C-n C-p:nav  Enter:open  Space:star  a:add  Bksp:up  Esc:close~%"))
       ;; Entries - show a scrolling window that keeps the cursor visible.
-      ;; 3 header lines + 2 summary lines = 5 overhead lines.
+      ;; Overhead: header(1) + separator(1) + help(1) + scroll-up(1)
+      ;; + scroll-down(1) + blank(1) + summary(1) + top-gap(~3) = 10
       (let* ((vp (when (and port (typep port 'clim-charmed::charmed-port))
                    (gethash stream (clim-charmed::charmed-port-viewport-sizes port))))
-             (viewport-lines (if vp (max 1 (- (round (fourth vp)) 5)) 20))
+             (viewport-lines (if vp (max 1 (- (round (fourth vp)) 10)) 20))
              (n (length entries))
              (scroll (frame-browser-scroll frame))
              ;; Adjust scroll to keep cursor visible
@@ -1195,6 +1196,8 @@
                     (cmd (if browse-p
                              (dispatch-browse-key key-name char mods)
                              (dispatch-edit-key key-name char mods))))
+               (%log (format nil "RAW-KEY mode=~A key=~S char=~S mods=~D cmd=~S"
+                             (if browse-p :browse :edit) key-name char mods cmd))
                (when cmd (return cmd))))))))
     (t (call-next-method))))
 
